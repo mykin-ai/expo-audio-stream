@@ -29,7 +29,7 @@ public class ExpoAudioStreamModule: Module {
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .voicePrompt, options: [.allowBluetooth, .defaultToSpeaker])
+            try audioSession.setCategory(.playAndRecord, mode: .voicePrompt, options: [.allowBluetooth, .defaultToSpeaker])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Error configuring audio session: \(error)")
