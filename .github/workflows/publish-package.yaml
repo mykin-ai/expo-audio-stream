@@ -16,9 +16,6 @@ jobs:
           node-version: "18.18.2"
           registry-url: "https://npm.pkg.github.com"
           scope: "@mykin-ai"
-      - name: Authentication
-        run: |
-          echo -e '\t\tnpmAuthToken: "$NODE_AUTH_TOKEN"' >> ./.yarnrc.yml
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: yarn
