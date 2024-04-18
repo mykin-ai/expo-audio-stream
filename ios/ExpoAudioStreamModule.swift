@@ -6,8 +6,6 @@ public class ExpoAudioStreamModule: Module {
     private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     private var audioEngine = AVAudioEngine()
     private var playerNode = AVAudioPlayerNode()
-    private var audioSessionCategory: AVAudioSession.Category = .playback
-    private var audioSessionMode: AVAudioSession.Mode = .default
     
     // Two buffer queues for alternating playback, storing tuples of buffers and promises
     private var bufferQueueA: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
@@ -31,8 +29,8 @@ public class ExpoAudioStreamModule: Module {
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(self.audioSessionCategory, mode: self.audioSessionMode, options: [])
-            try audioSession.setActive(true)
+            try audioSession.setCategory(.playback, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Error configuring audio session: \(error)")
         }

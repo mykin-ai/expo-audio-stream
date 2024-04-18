@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { ExpoAudioStream } from "expo-audio-stream";
+import { ExpoAudioStream } from "@mykin-ai/expo-audio-stream";
 import { useEffect } from "react";
 import { sampleA } from "./samples/sample-a";
 import { sampleB } from "./samples/sample-b";

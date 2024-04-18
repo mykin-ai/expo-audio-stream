@@ -4,10 +4,10 @@
     "strict": true,
     "allowJs": true,
     "paths": {
-      "expo-audio-stream": [
+      "@mykin-ai/expo-audio-stream": [
         "../src/index"
       ],
-      "expo-audio-stream/*": [
+      "@mykin-ai/expo-audio-stream/*": [
         "../src/*"
       ]
     }
