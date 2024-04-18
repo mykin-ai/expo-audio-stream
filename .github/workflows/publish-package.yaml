@@ -1,0 +1,28 @@
+name: Publish package to GitHub Packages
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18.18.2"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@mykin-ai"
+      - name: Authentication
+        run: |
+          echo -e '\t\tnpmAuthToken: "$NODE_AUTH_TOKEN"' >> ./.yarnrc.yml
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: yarn
+      - run: yarn build
+      - run: yarn npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
