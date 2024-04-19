@@ -29,7 +29,7 @@ public class ExpoAudioStreamModule: Module {
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers ,.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+            try audioSession.setCategory(.playAndRecord, mode: .voicePrompt, options: [.duckOthers ,.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Error configuring audio session: \(error)")
@@ -185,8 +185,9 @@ public class ExpoAudioStreamModule: Module {
     }
     
     private func monitorAudioRouteChanges() {
-        NotificationCenter.default.removeObserver(self)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleAudioSessionRouteChange), name: AVAudioSession.routeChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: AVAudioSession.sharedInstance(), queue: nil) { [weak self] notification in
+            self?.handleAudioSessionRouteChange(notification: notification)
+        }
     }
     
     @objc private func handleAudioSessionRouteChange(notification: Notification) {
