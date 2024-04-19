@@ -28,12 +28,11 @@ public class ExpoAudioStreamModule: Module {
     
     private func configureAudioSession() {
         do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: .defaultToSpeaker)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            try audioSession.overrideOutputAudioPort(.speaker)
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .mixWithOthers])
+        try audioSession.setActive(true)
         } catch {
-            print("Error configuring audio session: \(error)")
+        print("Error configuring audio session: \(error)")
         }
     }
     
@@ -210,7 +209,8 @@ public class ExpoAudioStreamModule: Module {
     private func updateAudioRoute() {
         let audioSession = AVAudioSession.sharedInstance()
         let headphonesConnected = audioSession.currentRoute.outputs.contains { $0.portType == .headphones || $0.portType == .bluetoothA2DP }
-        // try? audioSession.overrideOutputAudioPort(headphonesConnected ? .none : .speaker)
+        try? audioSession.setPreferredInput(nil)
+        try? audioSession.overrideOutputAudioPort(headphonesConnected ? .none : .speaker)
         print("updateAudioRoute: \(headphonesConnected)")
     }
     
@@ -249,6 +249,7 @@ public class ExpoAudioStreamModule: Module {
         OnCreate {
             self.setupAudioEngine()
             self.monitorAudioRouteChanges()
+            self.updateAudioRoute()
         }
     }
 }
