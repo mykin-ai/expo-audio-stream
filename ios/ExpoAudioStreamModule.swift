@@ -29,7 +29,8 @@ public class ExpoAudioStreamModule: Module {
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .voicePrompt, options: [.allowBluetooth, .defaultToSpeaker])
+            try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
+            try audioSession.setMode(.spokenAudio)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Error configuring audio session: \(error)")
@@ -189,13 +190,16 @@ public class ExpoAudioStreamModule: Module {
     }
     
     @objc private func handleAudioSessionRouteChange(notification: Notification) {
+        print("Route change detected")
         guard let userInfo = notification.userInfo,
               let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
             return
         }
+        print("Route change reason: \(reason)")
         switch reason {
         case .newDeviceAvailable, .oldDeviceUnavailable:
+            print("Updating audio route due to device availability changes")
             self.updateAudioRoute()
         default: break
         }
@@ -205,6 +209,7 @@ public class ExpoAudioStreamModule: Module {
         let audioSession = AVAudioSession.sharedInstance()
         let headphonesConnected = audioSession.currentRoute.outputs.contains { $0.portType == .headphones || $0.portType == .bluetoothA2DP }
         try? audioSession.overrideOutputAudioPort(headphonesConnected ? .none : .speaker)
+        print("updateAudioRoute: \(headphonesConnected)")
     }
     
     
