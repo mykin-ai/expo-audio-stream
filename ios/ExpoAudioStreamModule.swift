@@ -28,11 +28,11 @@ public class ExpoAudioStreamModule: Module {
     
     private func configureAudioSession() {
         do {
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .mixWithOthers])
-        try audioSession.setActive(true)
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playAndRecord, mode: .voicePrompt, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+            //            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-        print("Error configuring audio session: \(error)")
+            print("Error configuring audio session: \(error)")
         }
     }
     
@@ -209,9 +209,9 @@ public class ExpoAudioStreamModule: Module {
     private func updateAudioRoute() {
         let audioSession = AVAudioSession.sharedInstance()
         let headphonesConnected = audioSession.currentRoute.outputs.contains { $0.portType == .headphones || $0.portType == .bluetoothA2DP }
-        try? audioSession.setPreferredInput(nil)
         try? audioSession.overrideOutputAudioPort(headphonesConnected ? .none : .speaker)
         print("updateAudioRoute: \(headphonesConnected)")
+        print("audioSession.currentRoute.outputs: \(audioSession.currentRoute.outputs)")
     }
     
     
