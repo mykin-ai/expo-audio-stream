@@ -1,4 +1,4 @@
-package expo.modules.audiostream.example
+package ai.mykin.audiostream.dev
 
 import android.os.Build
 import android.os.Bundle

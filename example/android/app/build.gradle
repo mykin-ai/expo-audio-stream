@@ -83,9 +83,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'expo.modules.audiostream.example'
+    namespace 'ai.mykin.audiostream.dev'
     defaultConfig {
-        applicationId 'expo.modules.audiostream.example'
+        applicationId 'ai.mykin.audiostream.dev'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
