@@ -18,21 +18,24 @@ public class ExpoAudioStreamModule: Module {
         self.audioEngine.attach(self.playerNode)
         self.audioEngine.connect(self.playerNode, to: self.audioEngine.mainMixerNode, format: self.audioFormat)
         self.playerNode.volume = 1.0
-        do {
-            self.configureAudioSession()
-            try self.audioEngine.start()
-        } catch {
-            print("Error starting audio engine: \(error)")
-        }
     }
     
-    private func configureAudioSession() {
+    private func activateAudioSession() throws {
+        let audioSession = AVAudioSession.sharedInstance()
         do {
-            let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            print("Error configuring audio session: \(error)")
+            throw error
+        }
+    }
+    
+    private func deactivateAudioSession() {
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setActive(false)
+        } catch {
+            print("Failed to deactivate audio session: \(error)")
         }
     }
     
@@ -74,7 +77,6 @@ public class ExpoAudioStreamModule: Module {
         }
         
         self.isPlayingQueueA.toggle() // Switch queues
-        
         // Ensure the audio engine and player node are running
         self.startEngineAndNodeIfNeeded()
         
@@ -99,6 +101,7 @@ public class ExpoAudioStreamModule: Module {
     private func startEngineAndNodeIfNeeded() {
         if !self.audioEngine.isRunning {
             do {
+                try self.activateAudioSession()
                 try self.audioEngine.start()
             } catch {
                 print("Error starting audio engine: \(error)")
@@ -162,15 +165,7 @@ public class ExpoAudioStreamModule: Module {
     
     private func startPlayback(promise: Promise) {
         DispatchQueue.main.async {
-            if !self.audioEngine.isRunning {
-                do {
-                    try self.audioEngine.start()
-                } catch {
-                    promise.reject("ERR_STARTING_ENGINE", "Failed to start audio engine: \(error.localizedDescription)")
-                    return
-                }
-            }
-            self.playerNode.play()
+            self.startEngineAndNodeIfNeeded()
             promise.resolve(nil)
         }
     }
@@ -180,6 +175,7 @@ public class ExpoAudioStreamModule: Module {
             self.playerNode.stop()
             self.bufferQueueA.removeAll()
             self.bufferQueueB.removeAll()
+            self.deactivateAudioSession() // Deactivate session when stopping playback
             promise.resolve(nil)
         }
     }
