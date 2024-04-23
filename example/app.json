@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "expo-audio-stream-example",
-    "slug": "expo-audio-stream-example",
+    "slug": "expo-audio-stream",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -27,6 +27,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "25f2fa48-a72b-47f2-884a-6c0e4f344684"
+      }
+    },
+    "owner": "mykin-ai"
   }
 }

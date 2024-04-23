@@ -1,0 +1,81 @@
+{
+    "cli": {
+        "version": ">= 3.7.2"
+    },
+    "build": {
+        "development": {
+            "developmentClient": true,
+            "distribution": "internal",
+            "ios": {
+                "resourceClass": "m-medium"
+            },
+            "env": {
+                "APP_VARIANT": "development",
+                "NODE_ENV": "development"
+            },
+            "node": "18.16.0"
+        },
+        "development-simulator": {
+            "developmentClient": true,
+            "distribution": "internal",
+            "ios": {
+                "simulator": true,
+                "resourceClass": "m-medium"
+            },
+            "env": {
+                "APP_VARIANT": "development",
+                "NODE_ENV": "development"
+            },
+            "node": "18.16.0"
+        },
+        "preview-feature": {
+            "distribution": "internal",
+            "channel": "preview-feature",
+            "ios": {
+                "resourceClass": "m-medium"
+            },
+            "android": {
+                "buildType": "apk"
+            },
+            "env": {
+                "APP_VARIANT": "preview-feature",
+                "NODE_ENV": "production"
+            },
+            "node": "18.16.0"
+        },
+        "preview": {
+            "distribution": "internal",
+            "channel": "preview",
+            "ios": {
+                "resourceClass": "m-medium"
+            },
+            "android": {
+                "buildType": "apk"
+            },
+            "env": {
+                "APP_VARIANT": "preview",
+                "NODE_ENV": "production"
+            },
+            "node": "18.16.0"
+        },
+        "production": {
+            "channel": "production",
+            "ios": {
+                "resourceClass": "m-medium"
+            },
+            "android": {
+                "buildType": "app-bundle"
+            },
+            "env": {
+                "APP_VARIANT": "production",
+                "NODE_ENV": "production"
+            },
+            "node": "18.16.0"
+        }
+    },
+    "submit": {
+        "production": {
+            "ios": {}
+        }
+    }
+}
