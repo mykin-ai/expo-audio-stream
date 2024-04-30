@@ -6,6 +6,7 @@ public class ExpoAudioStreamModule: Module {
     private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     private var audioEngine = AVAudioEngine()
     private var playerNode = AVAudioPlayerNode()
+    private var audioSession = AVAudioSession.sharedInstance()
     
     // Two buffer queues for alternating playback, storing tuples of buffers and promises
     private var bufferQueueA: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
@@ -13,26 +14,67 @@ public class ExpoAudioStreamModule: Module {
     private let bufferAccessQueue = DispatchQueue(label: "com.kinexpoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
     
     private var isPlayingQueueA: Bool = false // Indicates which queue is currently in use for playback
+    private var anotherAppPlaying: Bool = false
+    private var isAudioEngineSetup: Bool = false
+    private var isAudioSessionSetup: Bool = false
     
     private func setupAudioEngine() {
-        self.audioEngine.attach(self.playerNode)
-        self.audioEngine.connect(self.playerNode, to: self.audioEngine.mainMixerNode, format: self.audioFormat)
-        self.playerNode.volume = 1.0
-        do {
-            self.configureAudioSession()
-            try self.audioEngine.start()
-        } catch {
-            print("Error starting audio engine: \(error)")
-        }
+            self.playerNode = AVAudioPlayerNode()
+            self.audioEngine = AVAudioEngine()
+            self.audioEngine.attach(self.playerNode)
+            self.audioEngine.connect(self.playerNode, to: self.audioEngine.mainMixerNode, format: self.audioFormat)
+            self.playerNode.volume = 1.0
+            self.isAudioEngineSetup = true
     }
     
     private func configureAudioSession() {
+            do {
+                self.audioSession = AVAudioSession.sharedInstance()
+                try self.audioSession.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+                try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                self.isAudioSessionSetup = true
+            } catch {
+                print("Error configuring audio session: \(error)")
+            }
+    }
+    
+    func restoreAudioSession() {
+        // Stop or pause all audio playback and recording
+        self.audioEngine.stop()
+        self.audioEngine.disconnectNodeOutput(self.audioEngine.mainMixerNode)
+
+        // Wait for the audio engine to fully stop before deactivating the audio session
+        while self.audioEngine.isRunning {
+            // Wait for the audio engine to stop
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+
+        // Introduce a delay before deactivating the audio session
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            do {
+                // Deactivate the audio session
+                try self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+                self.setupAudioEngine()
+                self.configureAudioSession()
+            } catch {
+                print("Error deactivating or reactivating audio session: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func startEngineAndNodeIfNeeded() {
         do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            if !self.audioEngine.isRunning {
+                self.audioEngine.prepare()
+                try self.audioEngine.start()
+            }
+
+            if !self.playerNode.isPlaying {
+                self.playerNode.play()
+            }
         } catch {
-            print("Error configuring audio session: \(error)")
+            self.restoreAudioSession()
+            print("Error starting audio engine: \(error)")
         }
     }
     
@@ -64,6 +106,14 @@ public class ExpoAudioStreamModule: Module {
     }
     
     private func switchQueuesAndPlay() {
+        if !self.isAudioEngineSetup {
+            self.setupAudioEngine()
+        }
+        
+        if !self.isAudioSessionSetup {
+            self.configureAudioSession()
+        }
+
         // Clear the queue that just finished playing
         self.bufferAccessQueue.async {
             if self.isPlayingQueueA {
@@ -75,9 +125,6 @@ public class ExpoAudioStreamModule: Module {
         
         self.isPlayingQueueA.toggle() // Switch queues
         
-        // Ensure the audio engine and player node are running
-        self.startEngineAndNodeIfNeeded()
-        
         // Schedule buffers from the new current queue for playback
         let currentQueue = self.currentQueue()
         for (buffer, promise) in currentQueue {
@@ -85,6 +132,12 @@ public class ExpoAudioStreamModule: Module {
                 self?.onBufferCompletion(promise)
             }
         }
+        
+        
+        // Ensure the audio engine and player node are running
+        self.startEngineAndNodeIfNeeded()
+        
+        
     }
     
     private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
@@ -96,19 +149,6 @@ public class ExpoAudioStreamModule: Module {
         promise(nil)
     }
     
-    private func startEngineAndNodeIfNeeded() {
-        if !self.audioEngine.isRunning {
-            do {
-                try self.audioEngine.start()
-            } catch {
-                print("Error starting audio engine: \(error)")
-            }
-        }
-        
-        if !self.playerNode.isPlaying {
-            self.playerNode.play()
-        }
-    }
     
     private func removeRIFFHeaderIfNeeded(from audioData: Data) -> Data? {
         let headerSize = 44 // The "RIFF" header is 44 bytes
@@ -190,6 +230,10 @@ public class ExpoAudioStreamModule: Module {
         }
     }
     
+    func monitorAudioSessionNotifications() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleAudioSessionInterruption(_:)), name: AVAudioSession.interruptionNotification, object: nil)
+    }
+    
     @objc private func handleAudioSessionRouteChange(notification: Notification) {
         print("Route change detected")
         guard let userInfo = notification.userInfo,
@@ -203,6 +247,22 @@ public class ExpoAudioStreamModule: Module {
             print("Updating audio route due to device availability changes")
             self.updateAudioRoute()
         default: break
+        }
+    }
+    
+    @objc func handleAudioSessionInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+        
+        switch type {
+        case .began:
+            self.anotherAppPlaying = true
+        case .ended:
+            self.anotherAppPlaying = false
+            self.configureAudioSession()
         }
     }
     
@@ -247,8 +307,8 @@ public class ExpoAudioStreamModule: Module {
         }
         
         OnCreate {
-            self.setupAudioEngine()
             self.monitorAudioRouteChanges()
+            self.monitorAudioSessionNotifications()
             self.updateAudioRoute()
         }
     }
