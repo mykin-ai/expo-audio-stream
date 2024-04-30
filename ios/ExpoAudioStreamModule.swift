@@ -8,44 +8,47 @@ public class ExpoAudioStreamModule: Module {
     private var playerNode = AVAudioPlayerNode()
     private var audioSession = AVAudioSession.sharedInstance()
     
-    private var bufferQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
+    // Two buffer queues for alternating playback, storing tuples of buffers and promises
+    private var bufferQueueA: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
+    private var bufferQueueB: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
     private let bufferAccessQueue = DispatchQueue(label: "com.kinexpoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
     
+    private var isPlayingQueueA: Bool = false // Indicates which queue is currently in use for playback
     private var anotherAppPlaying: Bool = false
     private var isAudioEngineSetup: Bool = false
     private var isAudioSessionSetup: Bool = false
     
     private func setupAudioEngine() {
-        self.playerNode = AVAudioPlayerNode()
-        self.audioEngine = AVAudioEngine()
-        self.audioEngine.attach(self.playerNode)
-        self.audioEngine.connect(self.playerNode, to: self.audioEngine.mainMixerNode, format: self.audioFormat)
-        self.playerNode.volume = 1.0
-        self.isAudioEngineSetup = true
+            self.playerNode = AVAudioPlayerNode()
+            self.audioEngine = AVAudioEngine()
+            self.audioEngine.attach(self.playerNode)
+            self.audioEngine.connect(self.playerNode, to: self.audioEngine.mainMixerNode, format: self.audioFormat)
+            self.playerNode.volume = 1.0
+            self.isAudioEngineSetup = true
     }
     
     private func configureAudioSession() {
-        do {
-            self.audioSession = AVAudioSession.sharedInstance()
-            try self.audioSession.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
-            try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            self.isAudioSessionSetup = true
-        } catch {
-            print("Error configuring audio session: \(error)")
-        }
+            do {
+                self.audioSession = AVAudioSession.sharedInstance()
+                try self.audioSession.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay])
+                try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                self.isAudioSessionSetup = true
+            } catch {
+                print("Error configuring audio session: \(error)")
+            }
     }
     
     func restoreAudioSession() {
         // Stop or pause all audio playback and recording
         self.audioEngine.stop()
         self.audioEngine.disconnectNodeOutput(self.audioEngine.mainMixerNode)
-        
+
         // Wait for the audio engine to fully stop before deactivating the audio session
         while self.audioEngine.isRunning {
             // Wait for the audio engine to stop
             Thread.sleep(forTimeInterval: 0.1)
         }
-        
+
         // Introduce a delay before deactivating the audio session
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             do {
@@ -58,14 +61,14 @@ public class ExpoAudioStreamModule: Module {
             }
         }
     }
-    
+
     private func startEngineAndNodeIfNeeded() {
         do {
             if !self.audioEngine.isRunning {
                 self.audioEngine.prepare()
                 try self.audioEngine.start()
             }
-            
+
             if !self.playerNode.isPlaying {
                 self.playerNode.play()
             }
@@ -83,14 +86,26 @@ public class ExpoAudioStreamModule: Module {
             return
         }
         
+        print("pcmBuffer size: \(pcmBuffer.frameLength)")
+        
         self.bufferAccessQueue.async {
             let bufferTuple = (buffer: pcmBuffer, promise: resolver)
-            self.bufferQueue.append(bufferTuple)
-            self.playQueue()
+            if self.isPlayingQueueA {
+                // Directly append to bufferQueueB if isPlayingQueueA is true
+                self.bufferQueueB.append(bufferTuple)
+            } else {
+                // Otherwise, append to bufferQueueA
+                self.bufferQueueA.append(bufferTuple)
+            }
+            
+            // Check if it's time to switch queues and initiate playback
+            if self.playerNode.isPlaying == false || self.currentQueue().isEmpty {
+                self.switchQueuesAndPlay()
+            }
         }
     }
     
-    private func playQueue() {
+    private func switchQueuesAndPlay() {
         if !self.isAudioEngineSetup {
             self.setupAudioEngine()
         }
@@ -98,17 +113,35 @@ public class ExpoAudioStreamModule: Module {
         if !self.isAudioSessionSetup {
             self.configureAudioSession()
         }
-        
+
+        // Clear the queue that just finished playing
         self.bufferAccessQueue.async {
-            if !self.bufferQueue.isEmpty {
-                let (buffer, promise) = self.bufferQueue.removeFirst()
-                self.playerNode.scheduleBuffer(buffer) { [weak self] in
-                    self?.onBufferCompletion(promise)
-                    self?.playQueue()
-                }
-                self.startEngineAndNodeIfNeeded()
+            if self.isPlayingQueueA {
+                self.bufferQueueA.removeAll()
+            } else {
+                self.bufferQueueB.removeAll()
             }
         }
+        
+        self.isPlayingQueueA.toggle() // Switch queues
+        
+        // Schedule buffers from the new current queue for playback
+        let currentQueue = self.currentQueue()
+        for (buffer, promise) in currentQueue {
+            self.playerNode.scheduleBuffer(buffer) { [weak self] in
+                self?.onBufferCompletion(promise)
+            }
+        }
+        
+        
+        // Ensure the audio engine and player node are running
+        self.startEngineAndNodeIfNeeded()
+        
+        
+    }
+    
+    private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
+        return self.isPlayingQueueA ? self.bufferQueueA : self.bufferQueueB
     }
     
     private func onBufferCompletion(_ promise: RCTPromiseResolveBlock) {
@@ -185,9 +218,8 @@ public class ExpoAudioStreamModule: Module {
     private func stopPlayback(promise: Promise) {
         DispatchQueue.main.async {
             self.playerNode.stop()
-            if !self.bufferQueue.isEmpty {
-                self.bufferQueue.removeAll()
-            }
+            self.bufferQueueA.removeAll()
+            self.bufferQueueB.removeAll()
             promise.resolve(nil)
         }
     }
