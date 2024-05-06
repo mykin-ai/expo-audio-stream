@@ -53,7 +53,6 @@ public class AudioController {
     
     private func connectNodes() {
         if let engine = audioEngine, let playerNode = audioPlayerNode {
-//            let format = engine.mainMixerNode.outputFormat(forBus: 0)
             engine.connect(playerNode, to: engine.mainMixerNode, format: self.audioFormat)
         }
     }
@@ -146,15 +145,15 @@ public class AudioController {
         }
         
         switch reason {
-            case .oldDeviceUnavailable:
-                audioPlayerNode?.pause()
-                print("Headphones were unplugged.")
-            case .newDeviceAvailable:
-                // Resume playback if appropriate
+        case .oldDeviceUnavailable:
+            audioPlayerNode?.pause()
+            print("Headphones were unplugged.")
+        case .newDeviceAvailable:
+            // Resume playback if appropriate
             audioPlayerNode?.play()
-            default:
-                break
-            }
+        default:
+            break
+        }
     }
     
     @objc private func handleMediaServicesWereLost(notification: Notification) {
@@ -170,7 +169,7 @@ public class AudioController {
         }
     }
     
-    @objc func audioSessionDidChangeFocus(notification: Notification) {
+    @objc private func audioSessionDidChangeFocus(notification: Notification) {
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionSilenceSecondaryAudioHintTypeKey] as? UInt,
               let type = AVAudioSession.SilenceSecondaryAudioHintType(rawValue: typeValue) else { return }
@@ -199,7 +198,7 @@ public class AudioController {
     }
     
     // Adjust usage based on app lifecycle or specific user actions
-    @objc func appWillResignActive(notification: Notification) {
+    @objc private func appWillResignActive(notification: Notification) {
         try? deactivateAudioSession()
     }
     
@@ -213,12 +212,10 @@ public class AudioController {
             print("Cannot pause: Engine is not running or node is unavailable.")
         }
     }
-
+    
     public func pause(promise: Promise) {
-        DispatchQueue.main.async {
-            self.safePause()
-            promise.resolve(nil)
-        }
+        self.safePause()
+        promise.resolve(nil)
     }
     
     private func safeStop() {
@@ -228,23 +225,21 @@ public class AudioController {
             print("Cannot stop: Engine is not running or node is unavailable.")
         }
     }
-
+    
     
     public func stop(promise: Promise) {
-        DispatchQueue.main.async {
-            self.safeStop()  // Stop the audio player node
-            do {
-                try self.deactivateAudioSession()  // Deactivate the session
-                self.bufferQueueA.removeAll()
-                self.bufferQueueB.removeAll()
-                promise.resolve(nil)
-            } catch {
-                promise.reject("PLAYBACK_STOP", "Failed to deactivate audio session: \(error.localizedDescription)")
-                print("Failed to deactivate audio session: \(error.localizedDescription)")
-            }
+        self.safeStop()  // Stop the audio player node
+        do {
+            try self.deactivateAudioSession()  // Deactivate the session
+            self.bufferQueueA.removeAll()
+            self.bufferQueueB.removeAll()
+            promise.resolve(nil)
+        } catch {
+            promise.reject("PLAYBACK_STOP", "Failed to deactivate audio session: \(error.localizedDescription)")
+            print("Failed to deactivate audio session: \(error.localizedDescription)")
         }
     }
-
+    
     
     private func safePlay() {
         if let node = audioPlayerNode, let engine = audioEngine, engine.isRunning {
@@ -254,30 +249,28 @@ public class AudioController {
         }
     }
     
-    func play(promise: Promise?) {
-        DispatchQueue.main.async {
-            // Ensure that the audio engine and nodes are set up
-            if self.audioEngine == nil || self.audioPlayerNode == nil || !self.audioEngine!.isRunning {
-                do {
-                    try self.setupAudioComponentsAndStart()
-                } catch {
-                    print("Failed to setupAudioComponentsAndStart: \(error.localizedDescription)")
-                }
-            }
-            
-            // Attempt to activate the audio session and play
+    public func play(promise: Promise?) {
+        // Ensure that the audio engine and nodes are set up
+        if self.audioEngine == nil || self.audioPlayerNode == nil || !self.audioEngine!.isRunning {
             do {
-                try self.activateAudioSession()
-                self.safePlay()
-                promise?.resolve(nil)
+                try self.setupAudioComponentsAndStart()
             } catch {
-                promise?.reject("PLAYBACK_PLAY", "Failed to activate audio session or play audio: \(error.localizedDescription)")
-                print("Failed to activate audio session or play audio: \(error.localizedDescription)")
+                print("Failed to setupAudioComponentsAndStart: \(error.localizedDescription)")
             }
+        }
+        
+        // Attempt to activate the audio session and play
+        do {
+            try self.activateAudioSession()
+            self.safePlay()
+            promise?.resolve(nil)
+        } catch {
+            promise?.reject("PLAYBACK_PLAY", "Failed to activate audio session or play audio: \(error.localizedDescription)")
+            print("Failed to activate audio session or play audio: \(error.localizedDescription)")
         }
     }
     
-    @objc func setVolume(_ volume: Float, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    @objc public func setVolume(_ volume: Float, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
         let clampedVolume = max(0, min(volume, 100)) / 100.0 // Normalize and clamp to [0, 1]
         
         DispatchQueue.main.async {
@@ -321,7 +314,7 @@ public class AudioController {
         return pcmBuffer
     }
     
-    @objc func streamRiff16Khz16BitMonoPcmChunk(_ chunk: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+    @objc public func streamRiff16Khz16BitMonoPcmChunk(_ chunk: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
         guard let audioData = Data(base64Encoded: chunk),
               let pcmData = self.removeRIFFHeaderIfNeeded(from: audioData),
               let pcmBuffer = self.convertPCMDataToBuffer(pcmData) else {
@@ -331,18 +324,18 @@ public class AudioController {
         
         print("pcmBuffer size: \(pcmBuffer.frameLength)")
         
-        self.bufferAccessQueue.async {
-            let bufferTuple = (buffer: pcmBuffer, promise: resolver)
-            if self.isPlayingQueueA {
-                // Directly append to bufferQueueB if isPlayingQueueA is true
-                self.bufferQueueB.append(bufferTuple)
-            } else {
-                // Otherwise, append to bufferQueueA
-                self.bufferQueueA.append(bufferTuple)
-            }
-            
-            self.switchQueuesAndPlay()
+        //        self.bufferAccessQueue.async {
+        let bufferTuple = (buffer: pcmBuffer, promise: resolver)
+        if self.isPlayingQueueA {
+            // Directly append to bufferQueueB if isPlayingQueueA is true
+            self.bufferQueueB.append(bufferTuple)
+        } else {
+            // Otherwise, append to bufferQueueA
+            self.bufferQueueA.append(bufferTuple)
         }
+        
+        self.switchQueuesAndPlay()
+        //        }
     }
     
     private func switchQueuesAndPlay() {
@@ -355,16 +348,28 @@ public class AudioController {
             }
         }
         
+        self.play(promise: nil)
+        
+        // Schedule buffers once the engine is confirmed to be running
+        self.ensureEngineIsRunningThenScheduleBuffers()
+    }
+    
+    private func ensureEngineIsRunningThenScheduleBuffers() {
+        guard let engine = self.audioEngine, engine.isRunning else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { // Check every 50 milliseconds
+                self.ensureEngineIsRunningThenScheduleBuffers()
+            }
+            return
+        }
+        
         self.isPlayingQueueA.toggle() // Switch queues
         
-        // Schedule buffers from the new current queue for playback
         let currentQueue = self.currentQueue()
         for (buffer, promise) in currentQueue {
             self.audioPlayerNode!.scheduleBuffer(buffer) {
                 promise(nil)
             }
         }
-        self.play(promise: nil)
     }
     
     private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
