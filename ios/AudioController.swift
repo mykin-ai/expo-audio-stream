@@ -7,9 +7,7 @@ public class AudioController {
     
     private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     
-    // Two buffer queues for alternating playback, storing tuples of buffers and promises
-    private var bufferQueueA: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
-    private var bufferQueueB: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
+    private var bufferQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
     private let bufferAccessQueue = DispatchQueue(label: "com.kinexpoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
     
     private var isPlayingQueueA: Bool = false // Indicates which queue is currently in use for playback
@@ -231,8 +229,9 @@ public class AudioController {
         self.safeStop()  // Stop the audio player node
         do {
             try self.deactivateAudioSession()  // Deactivate the session
-            self.bufferQueueA.removeAll()
-            self.bufferQueueB.removeAll()
+            if !self.bufferQueue.isEmpty {
+                self.bufferQueue.removeAll()
+            }
             promise.resolve(nil)
         } catch {
             promise.reject("PLAYBACK_STOP", "Failed to deactivate audio session: \(error.localizedDescription)")
@@ -242,10 +241,8 @@ public class AudioController {
     
     
     private func safePlay() {
-        if let node = audioPlayerNode, let engine = audioEngine, engine.isRunning {
+        if let node = audioPlayerNode, !node.isPlaying , let engine = audioEngine, engine.isRunning {
             node.play()
-        } else {
-            print("Engine is not running or node is unavailable.")
         }
     }
     
@@ -315,6 +312,7 @@ public class AudioController {
     }
     
     @objc public func streamRiff16Khz16BitMonoPcmChunk(_ chunk: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+        //        self.bufferAccessQueue.async {
         guard let audioData = Data(base64Encoded: chunk),
               let pcmData = self.removeRIFFHeaderIfNeeded(from: audioData),
               let pcmBuffer = self.convertPCMDataToBuffer(pcmData) else {
@@ -322,57 +320,48 @@ public class AudioController {
             return
         }
         
-        print("pcmBuffer size: \(pcmBuffer.frameLength)")
-        
-        //        self.bufferAccessQueue.async {
         let bufferTuple = (buffer: pcmBuffer, promise: resolver)
-        if self.isPlayingQueueA {
-            // Directly append to bufferQueueB if isPlayingQueueA is true
-            self.bufferQueueB.append(bufferTuple)
-        } else {
-            // Otherwise, append to bufferQueueA
-            self.bufferQueueA.append(bufferTuple)
-        }
-        
-        self.switchQueuesAndPlay()
-        //        }
-    }
-    
-    private func switchQueuesAndPlay() {
-        // Clear the queue that just finished playing
-        self.bufferAccessQueue.async {
-            if self.isPlayingQueueA {
-                self.bufferQueueA.removeAll()
-            } else {
-                self.bufferQueueB.removeAll()
-            }
-        }
+        bufferQueue.append(bufferTuple)
         
         self.play(promise: nil)
         
-        // Schedule buffers once the engine is confirmed to be running
-        self.ensureEngineIsRunningThenScheduleBuffers()
+        self.scheduleNextBuffer()
+        //        }
     }
     
-    private func ensureEngineIsRunningThenScheduleBuffers() {
+    private func scheduleNextBuffer() {
+        //        self.bufferAccessQueue.async {
         guard let engine = self.audioEngine, engine.isRunning else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { // Check every 50 milliseconds
-                self.ensureEngineIsRunningThenScheduleBuffers()
+                self.scheduleNextBuffer()
             }
             return
         }
         
-        self.isPlayingQueueA.toggle() // Switch queues
-        
-        let currentQueue = self.currentQueue()
-        for (buffer, promise) in currentQueue {
+        //            self.isPlayingQueueA.toggle() // Switch queues
+        //
+        //            let currentQueue = self.currentQueue()
+        //            for (buffer, promise) in currentQueue {
+        //                self.audioPlayerNode!.scheduleBuffer(buffer) {
+        //                    promise(nil)
+        //                }
+        //            }
+        if let (buffer, promise) = bufferQueue.first {
+            bufferQueue.removeFirst()
+            
             self.audioPlayerNode!.scheduleBuffer(buffer) {
                 promise(nil)
+                
+                let bufferDuration = Double(buffer.frameLength) / buffer.format.sampleRate
+                DispatchQueue.main.asyncAfter(deadline: .now() + bufferDuration) {
+                    self.scheduleNextBuffer()
+                }
             }
         }
+        //        }
     }
     
-    private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
-        return self.isPlayingQueueA ? self.bufferQueueA : self.bufferQueueB
-    }
+//    private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
+//        return self.isPlayingQueueA ? self.bufferQueueA : self.bufferQueueB
+//    }
 }
