@@ -228,7 +228,7 @@ public class AudioController {
     public func stop(promise: Promise) {
         self.safeStop()  // Stop the audio player node
         do {
-            try self.deactivateAudioSession()  // Deactivate the session
+            // try self.deactivateAudioSession()  // Deactivate the session
             if !self.bufferQueue.isEmpty {
                 self.bufferQueue.removeAll()
             }
