@@ -15,7 +15,7 @@ public class AudioController {
     init() {
         do {
             try setupAudioComponentsAndStart()
-            setupNotifications()
+            // setupNotifications()
         } catch {
             print("Failed to init")
         }
@@ -361,7 +361,7 @@ public class AudioController {
         //        }
     }
     
-//    private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
-//        return self.isPlayingQueueA ? self.bufferQueueA : self.bufferQueueB
-//    }
+    //    private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
+    //        return self.isPlayingQueueA ? self.bufferQueueA : self.bufferQueueB
+    //    }
 }
