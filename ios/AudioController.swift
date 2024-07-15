@@ -330,7 +330,6 @@ public class AudioController {
     }
     
     private func scheduleNextBuffer() {
-        //        self.bufferAccessQueue.async {
         guard let engine = self.audioEngine, engine.isRunning else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { // Check every 50 milliseconds
                 self.scheduleNextBuffer()
@@ -346,19 +345,20 @@ public class AudioController {
         //                    promise(nil)
         //                }
         //            }
-        if let (buffer, promise) = bufferQueue.first {
-            bufferQueue.removeFirst()
-            
-            self.audioPlayerNode!.scheduleBuffer(buffer) {
-                promise(nil)
+        self.bufferAccessQueue.async {
+            if let (buffer, promise) = self.bufferQueue.first {
+                self.bufferQueue.removeFirst()
                 
-                let bufferDuration = Double(buffer.frameLength) / buffer.format.sampleRate
-                DispatchQueue.main.asyncAfter(deadline: .now() + bufferDuration) {
-                    self.scheduleNextBuffer()
+                self.audioPlayerNode!.scheduleBuffer(buffer) {
+                    promise(nil)
+                    
+                    let bufferDuration = Double(buffer.frameLength) / buffer.format.sampleRate
+                    DispatchQueue.main.asyncAfter(deadline: .now() + bufferDuration) {
+                        self.scheduleNextBuffer()
+                    }
                 }
             }
         }
-        //        }
     }
     
     //    private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
