@@ -5,7 +5,7 @@ export class ExpoAudioStream {
     base64Chunk: string
   ): Promise<void> {
     try {
-      return await ExpoAudioStreamModule.streamRiff16Khz16BitMonoPcmChunk(
+      return ExpoAudioStreamModule.streamRiff16Khz16BitMonoPcmChunk(
         base64Chunk
       );
     } catch (error) {
