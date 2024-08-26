@@ -1,9 +1,9 @@
 {
   "platforms": ["ios", "android"],
   "ios": {
-    "modules": ["ExpoAudioStreamModule"]
+    "modules": ["ExpoPlayAudioStream"]
   },
   "android": {
-    "modules": ["expo.modules.audiostream.ExpoAudioStreamModule"]
+    "modules": ["expo.modules.audiostream.ExpoPlayAudioStream"]
   }
 }

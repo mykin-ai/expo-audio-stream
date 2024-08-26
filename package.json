@@ -1,7 +1,7 @@
 {
   "name": "@mykin-ai/expo-audio-stream",
   "version": "0.1.24",
-  "description": "Expo Audio Stream module",
+  "description": "Expo Play Audio Stream module",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "source": "src/index.ts",
@@ -20,8 +20,8 @@
   "keywords": [
     "react-native",
     "expo",
-    "expo-audio-stream",
-    "ExpoAudioStream"
+    "expo-play-audio-stream",
+    "ExpoPlayAudioStream"
   ],
   "repository": "https://github.com/mykin-ai/expo-audio-stream",
   "bugs": {

@@ -2,40 +2,40 @@ import Foundation
 import AVFoundation
 import ExpoModulesCore
 
-public class ExpoAudioStreamModule: Module {
-    private let audioContoller = AudioController()
-    
+public class ExpoPlayAudioStreamModule: Module {
+    private let audioController = AudioController()
+
     public func definition() -> ModuleDefinition {
-        Name("ExpoAudioStream")
-        
+        Name("ExpoPlayAudioStream")
+
         AsyncFunction("streamRiff16Khz16BitMonoPcmChunk") { (base64chunk: String, promise: Promise) in
-            audioContoller.streamRiff16Khz16BitMonoPcmChunk(base64chunk, resolver: { _ in
+            audioController.streamRiff16Khz16BitMonoPcmChunk(base64chunk, resolver: { _ in
                 promise.resolve(nil)
             }, rejecter: { code, message, error in
                 promise.reject(code ?? "ERR_UNKNOWN", message ?? "Unknown error")
             })
         }
-        
+
         AsyncFunction("setVolume") { (volume: Float, promise: Promise) in
-            audioContoller.setVolume(volume, resolver: { _ in
+            audioController.setVolume(volume, resolver: { _ in
                 promise.resolve(nil)
             }, rejecter: { code, message, error in
                 promise.reject(code ?? "ERR_VOLUME_ERROR", message ?? "Error setting volume")
             })
         }
-        
+
         AsyncFunction("pause") { promise in
-            audioContoller.pause(promise: promise)
+            audioController.pause(promise: promise)
         }
-        
+
         AsyncFunction("play") { promise in
-            audioContoller.play(promise: promise)
+            audioController.play(promise: promise)
         }
-        
+
         AsyncFunction("stop") { promise in
-            audioContoller.stop(promise: promise)
+            audioController.stop(promise: promise)
         }
-        
+
         OnCreate {}
     }
 }

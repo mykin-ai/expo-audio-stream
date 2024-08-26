@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
-class ExpoAudioStreamModule : Module() {
+class ExpoPlayAudioStreamModule : Module() {
     data class ChunkData(val chunk: String, val promise: Promise) // contains the base64 chunk
     data class AudioChunk(
             val audioData: FloatArray,
@@ -42,7 +42,7 @@ class ExpoAudioStreamModule : Module() {
     private var isPlaying = false
 
     override fun definition() = ModuleDefinition {
-        Name("ExpoAudioStream")
+        Name("ExpoAudioStreamKin")
 
         OnCreate {
             initializeAudioTrack()

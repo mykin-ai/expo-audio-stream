@@ -1,6 +1,6 @@
-# Expo Audio Stream 🎶
+# Expo Play Audio Stream 🎶
 
-The Expo Audio Stream module is a powerful tool for streaming audio data in your Expo-based React Native applications. It provides a seamless way to play audio chunks in real-time, allowing you to build audio-centric features like voice assistants, audio players, and more.
+The Expo Play Audio Stream module is a powerful tool for streaming audio data in your Expo-based React Native applications. It provides a seamless way to play audio chunks in real-time, allowing you to build audio-centric features like voice assistants, audio players, and more.
 
 ## Motivation 🎯
 
@@ -11,7 +11,7 @@ Expo's built-in audio capabilities are limited to playing pre-loaded audio files
 Here's an example of how you can use the Expo Audio Stream module to play a sequence of audio chunks:
 
 ```javascript
-import { ExpoAudioStream } from 'expo-audio-stream';
+import { ExpoPlayAudioStream } from 'expo-audio-stream';
 
 // Assuming you have some audio data in base64 format
 const sampleA = 'base64EncodedAudioDataA';
@@ -20,14 +20,14 @@ const sampleB = 'base64EncodedAudioDataB';
 useEffect(() => {
   async function playAudioChunks() {
     try {
-      await ExpoAudioStream.setVolume(100);
-      await ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
+      await ExpoPlayAudioStream.setVolume(100);
+      await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
       console.log('Streamed A');
-      await ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+      await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
       console.log('Streamed B');
       console.log('Streaming A & B');
-      ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
-      ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+      ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);  
+      ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
     } catch (error) {
       console.error(error);
     }
@@ -39,7 +39,7 @@ useEffect(() => {
 
 ## API 📚
 
-The Expo Audio Stream module provides the following API:
+The Expo Play Audio Stream module provides the following API:
 
 - `streamRiff16Khz16BitMonoPcmChunk(base64Chunk: string): Promise<void>`: Streams a base64-encoded audio chunk in the RIFF format with 16 kHz, 16-bit, mono PCM encoding.
 - `setVolume(volume: number): Promise<void>`: Sets the volume of the audio playback, where `volume` is a value between 0 and 100.
@@ -57,7 +57,7 @@ The Kotlin implementation of the Expo Audio Stream module uses the `AudioTrack` 
 
 ## Limitations and Considerations ⚠️
 
-- The Expo Audio Stream module is designed to work with specific audio formats (RIFF, 16 kHz, 16-bit, mono PCM). If your audio data is in a different format, you may need to convert it before using the module.
+- The Expo Play Audio Stream module is designed to work with specific audio formats (RIFF, 16 kHz, 16-bit, mono PCM). If your audio data is in a different format, you may need to convert it before using the module.
 - The module does not provide advanced features like audio effects, mixing, or recording. It is primarily focused on real-time audio streaming.
 - The performance of the module may depend on the device's hardware capabilities and the complexity of the audio data being streamed.
 
@@ -67,4 +67,4 @@ Contributions to the Expo Audio Stream module are welcome! If you encounter any 
 
 ## License 📄
 
-The Expo Audio Stream module is licensed under the [MIT License](LICENSE).
+The Expo Play Audio Stream module is licensed under the [MIT License](LICENSE).

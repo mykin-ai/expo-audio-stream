@@ -14,8 +14,6 @@ public class AudioController {
 
     init() {
         do {
-            //try setupAudioComponentsAndStart()
-            // setupNotifications()
         } catch {
             print("Failed to init")
         }
@@ -93,10 +91,7 @@ public class AudioController {
         NotificationCenter.default.addObserver(self, selector: #selector(handleMediaServicesWereLost), name: AVAudioSession.mediaServicesWereLostNotification, object: audioSession)
         NotificationCenter.default.addObserver(self, selector: #selector(handleMediaServicesWereReset), name: AVAudioSession.mediaServicesWereResetNotification, object: audioSession)
         NotificationCenter.default.addObserver(self, selector: #selector(audioSessionDidChangeFocus), name: AVAudioSession.silenceSecondaryAudioHintNotification, object: AVAudioSession.sharedInstance())
-
-
         NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
-
         NotificationCenter.default.addObserver(self, selector: #selector(appWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
 
     }
@@ -199,9 +194,6 @@ public class AudioController {
     @objc private func appWillResignActive(notification: Notification) {
         try? deactivateAudioSession()
     }
-
-    // MARK: - Playback controls
-
 
     private func safePause() {
         if let node = audioPlayerNode, let engine = audioEngine, engine.isRunning {
@@ -337,14 +329,6 @@ public class AudioController {
             return
         }
 
-        //            self.isPlayingQueueA.toggle() // Switch queues
-        //
-        //            let currentQueue = self.currentQueue()
-        //            for (buffer, promise) in currentQueue {
-        //                self.audioPlayerNode!.scheduleBuffer(buffer) {
-        //                    promise(nil)
-        //                }
-        //            }
         self.bufferAccessQueue.async {
             if let (buffer, promise) = self.bufferQueue.first {
                 self.bufferQueue.removeFirst()
@@ -360,8 +344,4 @@ public class AudioController {
             }
         }
     }
-
-    //    private func currentQueue() -> [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] {
-    //        return self.isPlayingQueueA ? self.bufferQueueA : self.bufferQueueB
-    //    }
 }

@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { ExpoAudioStream } from "@mykin-ai/expo-audio-stream";
+import { ExpoPlayAudioStream } from "@mykin-ai/expo-audio-stream";
 import { useEffect } from "react";
 import { sampleA } from "./samples/sample-a";
 import { sampleB } from "./samples/sample-b";
@@ -8,14 +8,14 @@ export default function App() {
   useEffect(() => {
     async function run() {
       try {
-        await ExpoAudioStream.setVolume(100);
-        await ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
+        await ExpoPlayAudioStream.setVolume(100);
+        await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
         console.log("streamed A");
-        await ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+        await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
         console.log("streamed B");
         console.log("streaming A & B");
-        ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
-        ExpoAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+        ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
+        ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
       } catch (error) {
         console.error(error);
       }

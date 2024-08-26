@@ -1,11 +1,11 @@
-import ExpoAudioStreamModule from "./ExpoAudioStreamModule";
+import ExpoPlayAudioStreamModule from "./ExpoPlayAudioStreamModule";
 
-export class ExpoAudioStream {
+export class ExpoPlayAudioStream {
   static async streamRiff16Khz16BitMonoPcmChunk(
     base64Chunk: string
   ): Promise<void> {
     try {
-      return ExpoAudioStreamModule.streamRiff16Khz16BitMonoPcmChunk(
+      return ExpoPlayAudioStreamModule.streamRiff16Khz16BitMonoPcmChunk(
         base64Chunk
       );
     } catch (error) {
@@ -16,7 +16,7 @@ export class ExpoAudioStream {
 
   static async setVolume(volme: number): Promise<void> {
     try {
-      return await ExpoAudioStreamModule.setVolume(volme);
+      return await ExpoPlayAudioStreamModule.setVolume(volme);
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to set volume: ${error}`);
@@ -25,7 +25,7 @@ export class ExpoAudioStream {
 
   static async pause(): Promise<void> {
     try {
-      return await ExpoAudioStreamModule.pause();
+      return await ExpoPlayAudioStreamModule.pause();
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to pause audio: ${error}`);
@@ -34,7 +34,7 @@ export class ExpoAudioStream {
 
   static async start(): Promise<void> {
     try {
-      return await ExpoAudioStreamModule.start();
+      return await ExpoPlayAudioStreamModule.start();
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to start audio: ${error}`);
@@ -43,7 +43,7 @@ export class ExpoAudioStream {
 
   static async stop(): Promise<void> {
     try {
-      return await ExpoAudioStreamModule.stop();
+      return await ExpoPlayAudioStreamModule.stop();
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to stop audio: ${error}`);
