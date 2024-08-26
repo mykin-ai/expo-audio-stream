@@ -42,7 +42,7 @@ class ExpoPlayAudioStreamModule : Module() {
     private var isPlaying = false
 
     override fun definition() = ModuleDefinition {
-        Name("ExpoAudioStreamKin")
+        Name("ExpoPlayAudioStream")
 
         OnCreate {
             initializeAudioTrack()
