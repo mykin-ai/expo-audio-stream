@@ -37,8 +37,12 @@ public class ExpoPlayAudioStreamModule: Module {
         }
 
         AsyncFunction("resetAudioSession") { (promise: Promise) in
-            audioController.reset()
-            promise.resolve(nil)
+            do {
+                try audioController.reset()
+                promise.resolve(nil)
+            } catch {
+                promise.reject("RESET_ERROR", "Failed to reset audio session: \(error.localizedDescription)")
+            }
         }
 
         OnCreate {}
