@@ -27,7 +27,7 @@ public class AudioController {
 
     private func activateAudioSession() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
+        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .duckOthers])
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
     }
 
