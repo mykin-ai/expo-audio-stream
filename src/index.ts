@@ -49,4 +49,13 @@ export class ExpoPlayAudioStream {
       throw new Error(`Failed to stop audio: ${error}`);
     }
   }
+
+  static async resetAudioSession(): Promise<void> {
+    try {
+      return await ExpoPlayAudioStreamModule.resetAudioSession();
+    } catch (error) {
+      console.error(error);
+      throw new Error(`Failed to reset audio session: ${error}`);
+    }
+  }
 }

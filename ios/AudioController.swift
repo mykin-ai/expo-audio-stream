@@ -220,10 +220,10 @@ public class AudioController {
     public func stop(promise: Promise) {
         self.safeStop()  // Stop the audio player node
         do {
-            // try self.deactivateAudioSession()  // Deactivate the session
             if !self.bufferQueue.isEmpty {
                 self.bufferQueue.removeAll()
             }
+            try self.deactivateAudioSession()  // Deactivate the session
             promise.resolve(nil)
         } catch {
             promise.reject("PLAYBACK_STOP", "Failed to deactivate audio session: \(error.localizedDescription)")
