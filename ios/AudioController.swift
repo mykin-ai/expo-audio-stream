@@ -321,6 +321,11 @@ public class AudioController {
         //        }
     }
 
+    public func reset() throws {
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     private func scheduleNextBuffer() {
         guard let engine = self.audioEngine, engine.isRunning else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { // Check every 50 milliseconds

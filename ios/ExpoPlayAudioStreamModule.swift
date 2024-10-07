@@ -36,8 +36,8 @@ public class ExpoPlayAudioStreamModule: Module {
             audioController.stop(promise: promise)
         }
 
-        AsyncFunction("resetAudioSession") { promise in
-            audioController.deactivateAudioSession()
+        AsyncFunction("resetAudioSession") { (promise: Promise) in
+            audioController.reset()
             promise.resolve(nil)
         }
 
