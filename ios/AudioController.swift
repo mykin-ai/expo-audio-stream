@@ -27,7 +27,8 @@ public class AudioController {
 
     private func activateAudioSession() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
+        try audioSession.setCategory(.playback, mode: .default)
+        //try audioSession.overrideOutputAudioPort(.speaker)
         try audioSession.setActive(true)
     }
 
@@ -72,6 +73,7 @@ public class AudioController {
 
     private func setupAudioComponentsAndStart() throws {
         do {
+            try self.deactivateAudioSession()
             setupAudioEngine()
             setupAudioPlayerNode()
             connectNodes()
