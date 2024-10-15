@@ -27,7 +27,7 @@ public class AudioController {
 
     private func activateAudioSession() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .duckOthers])
+        try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
         try audioSession.setActive(true)
     }
 
@@ -76,6 +76,7 @@ public class AudioController {
             setupAudioPlayerNode()
             connectNodes()
             try safeStartEngine()
+            try self.activateAudioSession()
         } catch {
             print("Failed to reset and start audio components: \(error.localizedDescription)")
         }
