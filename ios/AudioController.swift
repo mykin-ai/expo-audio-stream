@@ -28,7 +28,6 @@ public class AudioController {
     private func activateAudioSession() throws {
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(.playback, mode: .default)
-        //try audioSession.overrideOutputAudioPort(.speaker)
         try audioSession.setActive(true)
     }
 
@@ -73,7 +72,6 @@ public class AudioController {
 
     private func setupAudioComponentsAndStart() throws {
         do {
-            try self.deactivateAudioSession()
             setupAudioEngine()
             setupAudioPlayerNode()
             connectNodes()
@@ -226,7 +224,6 @@ public class AudioController {
             if !self.bufferQueue.isEmpty {
                 self.bufferQueue.removeAll()
             }
-            //try self.deactivateAudioSession()  // Deactivate the session
             promise.resolve(nil)
         } catch {
             promise.reject("PLAYBACK_STOP", "Failed to deactivate audio session: \(error.localizedDescription)")
@@ -243,23 +240,73 @@ public class AudioController {
 
     public func play(promise: Promise?) {
         // Ensure that the audio engine and nodes are set up
-        if self.audioEngine == nil || self.audioPlayerNode == nil || !self.audioEngine!.isRunning {
+        if self.audioEngine == nil || self.audioPlayerNode == nil {
             do {
                 try self.setupAudioComponentsAndStart()
+                // Attempt to activate the audio session and play
+                try self.activateAudioSession()
             } catch {
+                promise?.reject("PLAYBACK_PLAY", "Failed to activate engine and setup nodes: \(error.localizedDescription)")
                 print("Failed to setupAudioComponentsAndStart: \(error.localizedDescription)")
             }
         }
 
-        // Attempt to activate the audio session and play
         do {
-            try self.activateAudioSession()
+            if !self.audioEngine!.isRunning {
+                try self.audioEngine!.start()
+            }
             self.safePlay()
             promise?.resolve(nil)
         } catch {
             promise?.reject("PLAYBACK_PLAY", "Failed to activate audio session or play audio: \(error.localizedDescription)")
             print("Failed to activate audio session or play audio: \(error.localizedDescription)")
         }
+    }
+
+    private func scheduleNextBuffer() {
+        guard let engine = self.audioEngine, engine.isRunning else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { // Check every 50 milliseconds
+                self.scheduleNextBuffer()
+            }
+            return
+        }
+
+        self.bufferAccessQueue.async {
+            if let (buffer, promise) = self.bufferQueue.first {
+                self.bufferQueue.removeFirst()
+
+                self.audioPlayerNode!.scheduleBuffer(buffer) {
+                    promise(nil)
+
+                    let bufferDuration = Double(buffer.frameLength) / buffer.format.sampleRate
+                    DispatchQueue.main.asyncAfter(deadline: .now() + bufferDuration) {
+                        self.scheduleNextBuffer()
+                    }
+                }
+            }
+        }
+    }
+
+    @objc public func streamRiff16Khz16BitMonoPcmChunk(_ chunk: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+        guard let audioData = Data(base64Encoded: chunk),
+              let pcmData = self.removeRIFFHeaderIfNeeded(from: audioData),
+              let pcmBuffer = self.convertPCMDataToBuffer(pcmData) else {
+            rejecter("ERR_DECODE_AUDIO", "Failed to process audio chunk", nil)
+            return
+        }
+
+        let bufferTuple = (buffer: pcmBuffer, promise: resolver)
+        bufferQueue.append(bufferTuple)
+
+        self.play(promise: nil)
+
+        self.scheduleNextBuffer()
+    }
+
+    public func reset() throws {
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.playback, mode: .default)
+        try audioSession.setActive(true)
     }
 
     @objc public func setVolume(_ volume: Float, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
@@ -304,52 +351,5 @@ public class AudioController {
         }
 
         return pcmBuffer
-    }
-
-    @objc public func streamRiff16Khz16BitMonoPcmChunk(_ chunk: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
-        //        self.bufferAccessQueue.async {
-        guard let audioData = Data(base64Encoded: chunk),
-              let pcmData = self.removeRIFFHeaderIfNeeded(from: audioData),
-              let pcmBuffer = self.convertPCMDataToBuffer(pcmData) else {
-            rejecter("ERR_DECODE_AUDIO", "Failed to process audio chunk", nil)
-            return
-        }
-
-        let bufferTuple = (buffer: pcmBuffer, promise: resolver)
-        bufferQueue.append(bufferTuple)
-
-        self.play(promise: nil)
-
-        self.scheduleNextBuffer()
-        //        }
-    }
-
-    public func reset() throws {
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    private func scheduleNextBuffer() {
-        guard let engine = self.audioEngine, engine.isRunning else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { // Check every 50 milliseconds
-                self.scheduleNextBuffer()
-            }
-            return
-        }
-
-        self.bufferAccessQueue.async {
-            if let (buffer, promise) = self.bufferQueue.first {
-                self.bufferQueue.removeFirst()
-
-                self.audioPlayerNode!.scheduleBuffer(buffer) {
-                    promise(nil)
-
-                    let bufferDuration = Double(buffer.frameLength) / buffer.format.sampleRate
-                    DispatchQueue.main.asyncAfter(deadline: .now() + bufferDuration) {
-                        self.scheduleNextBuffer()
-                    }
-                }
-            }
-        }
     }
 }
