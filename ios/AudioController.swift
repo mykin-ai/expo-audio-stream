@@ -28,7 +28,7 @@ public class AudioController {
     private func activateAudioSession() throws {
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .duckOthers])
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        try audioSession.setActive(true)
     }
 
     private func deactivateAudioSession() throws {
@@ -223,7 +223,7 @@ public class AudioController {
             if !self.bufferQueue.isEmpty {
                 self.bufferQueue.removeAll()
             }
-            try self.deactivateAudioSession()  // Deactivate the session
+            //try self.deactivateAudioSession()  // Deactivate the session
             promise.resolve(nil)
         } catch {
             promise.reject("PLAYBACK_STOP", "Failed to deactivate audio session: \(error.localizedDescription)")
