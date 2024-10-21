@@ -3,6 +3,7 @@ package expo.modules.audiostream
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import android.util.Base64
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
@@ -21,17 +22,27 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import android.os.Bundle
+import android.util.Log
+import androidx.annotation.RequiresApi
+import expo.modules.interfaces.permissions.Permissions
+import android.Manifest
+import java.util.ArrayDeque
 
-class ExpoPlayAudioStreamModule : Module() {
-    data class ChunkData(val chunk: String, val promise: Promise) // contains the base64 chunk
+
+class ExpoPlayAudioStreamModule : Module(), EventSender {
+    data class ChunkData(val chunk: String, val turnId: String, val promise: Promise) // contains the base64 chunk
     data class AudioChunk(
             val audioData: FloatArray,
             val promise: Promise,
             var isPromiseSettled: Boolean = false
     ) // contains the decoded base64 chunk
 
-    private lateinit var processingChannel: Channel<ChunkData>
+    //private lateinit var processingChannel: Channel<ChunkData>
+    private lateinit var processingQueue: ArrayDeque<ChunkData>
     private lateinit var playbackChannel: Channel<AudioChunk>
+
+    private lateinit var audioRecorderManager: AudioRecorderManager
 
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -41,8 +52,14 @@ class ExpoPlayAudioStreamModule : Module() {
     private lateinit var audioTrack: AudioTrack
     private var isPlaying = false
 
+    @RequiresApi(Build.VERSION_CODES.R)
     override fun definition() = ModuleDefinition {
         Name("ExpoPlayAudioStream")
+
+        Events(Constants.AUDIO_EVENT_NAME)
+
+        // Initialize AudioRecorderManager
+        initializeManager()
 
         OnCreate {
             initializeAudioTrack()
@@ -51,17 +68,44 @@ class ExpoPlayAudioStreamModule : Module() {
 
         OnDestroy {
             stopPlayback()
-            processingChannel.close()
+            //processingChannel.close()
+            processingQueue.clear()
             stopProcessingLoop()
             coroutineScope.cancel()
         }
 
-        AsyncFunction("streamRiff16Khz16BitMonoPcmChunk") { chunk: String, promise: Promise ->
+        AsyncFunction("startRecording") { options: Map<String, Any?>, promise: Promise ->
+            audioRecorderManager.startRecording(options, promise)
+        }
+
+        AsyncFunction("pauseRecording") { promise: Promise ->
+            audioRecorderManager.pauseRecording(promise)
+        }
+
+        AsyncFunction("resumeRecording") { promise: Promise ->
+            audioRecorderManager.resumeRecording(promise)
+        }
+
+        AsyncFunction("stopRecording") { promise: Promise ->
+            audioRecorderManager.stopRecording(promise)
+        }
+
+        AsyncFunction("requestPermissionsAsync") { promise: Promise ->
+            Permissions.askForPermissionsWithPermissionsManager(appContext.permissions, promise, Manifest.permission.RECORD_AUDIO)
+        }
+
+        AsyncFunction("getPermissionsAsync") { promise: Promise ->
+            Permissions.getPermissionsWithPermissionsManager(appContext.permissions, promise, Manifest.permission.RECORD_AUDIO)
+        }
+
+        AsyncFunction("playAudio") { chunk: String, turnId:String, promise: Promise ->
             coroutineScope.launch {
-                if (processingChannel.isClosedForSend || playbackChannel.isClosedForSend) {
+                //if (processingChannel.isClosedForSend || playbackChannel.isClosedForSend) {
+                if (processingQueue.isEmpty() || playbackChannel.isClosedForSend) {
                     initializeChannels()
                 }
-                processingChannel.send(ChunkData(chunk, promise))
+                //processingChannel.send(ChunkData(chunk, turnId, promise))
+                processingQueue.add(ChunkData(chunk, turnId, promise))
                 ensureProcessingLoopStarted()
             }
         }
@@ -70,13 +114,29 @@ class ExpoPlayAudioStreamModule : Module() {
             setVolume(volume, promise)
         }
 
-        AsyncFunction("pause") { promise: Promise -> pausePlayback(promise) }
-        AsyncFunction("start") { promise: Promise -> startPlayback(promise) }
-        AsyncFunction("stop") { promise: Promise -> stopPlayback(promise) }
+        AsyncFunction("pauseAudio") { promise: Promise -> pausePlayback(promise) }
+
+        AsyncFunction("stopAudio") { promise: Promise -> stopPlayback(promise) }
+
+        AsyncFunction("clearPlaybackQueueByTurnId") { turnId:String, promise: Promise -> clearPlaybackQueueByTurnId(turnId, promise) }
+    }
+    private fun initializeManager() {
+        val androidContext =
+            appContext.reactContext ?: throw IllegalStateException("Android context not available")
+        val permissionUtils = PermissionUtils(androidContext)
+        val audioEncoder = AudioDataEncoder()
+        audioRecorderManager =
+            AudioRecorderManager(androidContext.filesDir, permissionUtils, audioEncoder, this)
+    }
+
+    override fun sendExpoEvent(eventName: String, params: Bundle) {
+        Log.d(Constants.TAG, "Sending event: $eventName")
+        this@ExpoPlayAudioStreamModule.sendEvent(eventName, params)
     }
 
     private fun initializeChannels() {
-        processingChannel = Channel<ChunkData>(Channel.UNLIMITED)
+        //processingChannel = Channel<ChunkData>(Channel.UNLIMITED)
+        processingQueue = ArrayDeque<ChunkData>()
         playbackChannel = Channel<AudioChunk>(Channel.UNLIMITED)
     }
 
@@ -89,14 +149,36 @@ class ExpoPlayAudioStreamModule : Module() {
     private fun startProcessingLoop() {
         processingJob =
                 coroutineScope.launch {
-                    for (chunkData in processingChannel) {
-                        processAndEnqueueChunk(chunkData)
-                        if (processingChannel.isEmpty && !isPlaying && playbackChannel.isEmpty) {
-                            break // Stop the loop if there's no more work to do
+//                    for (chunkData in processingChannel) {
+//                        processAndEnqueueChunk(chunkData)
+//                        if (processingChannel.isEmpty && !isPlaying && playbackChannel.isEmpty) {
+//                            break // Stop the loop if there's no more work to do
+//                        }
+//                    }
+
+                    while (processingQueue.isNotEmpty()) {
+                        val chunkData = processingQueue.poll() // Retrieve and remove the head of the queue
+                        if (chunkData != null) {
+                            processAndEnqueueChunk(chunkData)
+                        } else {
+                            // Handle the case where chunkData is null, if necessary
+                            println("Encountered null chunkData, skipping.")
+                        }
+
+                        // If both queues are empty and no audio is playing, stop the loop
+                        if (processingQueue.isEmpty() && !isPlaying && playbackChannel.isEmpty) {
+                            break // Exit the loop
                         }
                     }
                     processingJob = null
                 }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.N)
+    private fun clearPlaybackQueueByTurnId(turnId: String, promise: Promise? = null) {
+        if (!processingQueue.isEmpty()) {
+            processingQueue.removeIf { it.turnId == turnId }
+        }
     }
 
     private fun stopProcessingLoop() {
@@ -176,7 +258,8 @@ class ExpoPlayAudioStreamModule : Module() {
             // Cancel the processing job and close the channels
             processingJob?.cancel()
             processingJob = null
-            processingChannel.close()
+            //processingChannel.close()
+            processingQueue.clear()
             playbackChannel.close()
 
             promise?.resolve(null)

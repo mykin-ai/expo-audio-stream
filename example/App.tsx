@@ -1,21 +1,46 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Button, Platform, StyleSheet, Text, View } from "react-native";
 import { ExpoPlayAudioStream } from "@mykin-ai/expo-audio-stream";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { sampleA } from "./samples/sample-a";
 import { sampleB } from "./samples/sample-b";
+import {
+  AudioDataEvent,
+} from "@mykin-ai/expo-audio-stream/types";
+import { Subscription } from "expo-modules-core";
+import { Audio } from 'expo-av';
+
+const ANDROID_SAMPLE_RATE = 16000;
+const IOS_SAMPLE_RATE = 48000;
+const BIT_DEPTH = 16;
+const CHANNELS = 1;
+const ENCODING = "pcm_16bit";
+const RECORDING_INTERVAL = 50;
+
+const turnId1 = 'turnId1';
+const turnId2 = 'turnId2';
+
 
 export default function App() {
+
+
+  const eventListenerSubscriptionRef = useRef<Subscription | null>(null);
+
   useEffect(() => {
     async function run() {
       try {
-        await ExpoPlayAudioStream.setVolume(100);
-        await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
-        console.log("streamed A");
-        await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
-        console.log("streamed B");
-        console.log("streaming A & B");
-        ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
-        ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+        // console.log("setPlayAndRecord");
+        // //await ExpoPlayAudioStream.setVolume(100);
+        // await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+        // await ExpoPlayAudioStream.setPlayAndRecord();
+        // console.log("after setPlayAndRecord");
+        // //await new Promise((resolve) => setTimeout(resolve, 2000));
+        // await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+        // console.log("streamed A");
+        // await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
+        // console.log("streamed B");
+        // console.log("streaming A & B");
+        //ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
+        //ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
       } catch (error) {
         console.error(error);
       }
@@ -23,9 +48,76 @@ export default function App() {
     run();
   }, []);
 
+  const onAudioCallback = async (audio: AudioDataEvent) => {
+    console.log(audio.data.slice(0, 100));
+  };
+
   return (
     <View style={styles.container}>
       <Text>hi</Text>
+      <Button
+        onPress={async () => {
+          await ExpoPlayAudioStream.playAudio(sampleB, turnId1);
+        }}
+        title="Stream B"
+      />
+      <View style={{ height: 10 }}>
+        <Text>====================</Text>
+      </View>
+      <Button
+        onPress={async () => {
+          await ExpoPlayAudioStream.playAudio(sampleA, turnId2);
+        }}
+        title="Stream A"
+      />
+      <View style={{ height: 10 }}>
+        <Text>====================</Text>
+      </View>
+      <Button
+        onPress={async () => {
+          if (!isMicrophonePermissionGranted()) {
+            const permissionGranted = await requestMicrophonePermission();
+            if (!permissionGranted) {
+              return;
+            }
+          }
+          const sampleRate =
+            Platform.OS === "ios" ? IOS_SAMPLE_RATE : ANDROID_SAMPLE_RATE;
+          const { recordingResult, subscription } = await ExpoPlayAudioStream.startRecording({
+            interval: RECORDING_INTERVAL,
+            sampleRate,
+            channels: CHANNELS,
+            encoding: ENCODING,
+            onAudioStream: onAudioCallback,
+          });
+          console.log(JSON.stringify(recordingResult, null, 2 ));
+          eventListenerSubscriptionRef.current = subscription;
+        }}
+        title="Start Recording"
+      />
+       <View style={{ height: 10 }}>
+        <Text>====================</Text>
+      </View>
+      <Button
+        onPress={async () => {
+          
+          await ExpoPlayAudioStream.stopRecording();
+          if (eventListenerSubscriptionRef.current) {
+            eventListenerSubscriptionRef.current.remove();
+            eventListenerSubscriptionRef.current = null;
+          }
+        }}
+        title="Stop Recording"
+      />
+      <View style={{ height: 10 }}>
+        <Text>====================</Text>
+      </View>
+      <Button
+        onPress={async () => {
+          await ExpoPlayAudioStream.clearPlaybackQueueByTurnId(turnId1);
+        }}
+        title="Clear turnId1"
+      />
     </View>
   );
 }
@@ -38,3 +130,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+
+export const requestMicrophonePermission = async (): Promise<boolean> => {
+  const { granted } = await Audio.getPermissionsAsync();
+  let permissionGranted = granted;
+  if (!permissionGranted) {
+    const { granted: grantedPermission } = await Audio.requestPermissionsAsync();
+    permissionGranted = grantedPermission;
+  }
+  return permissionGranted;
+};
+
+export const isMicrophonePermissionGranted = async (): Promise<boolean> => {
+  const { granted } = await Audio.getPermissionsAsync();
+  return granted;
+};
