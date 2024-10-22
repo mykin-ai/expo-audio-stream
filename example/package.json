@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "expo": "~50.0.14",
-    "expo-av": "^14.0.7",
+    "expo-av": "~13.10.6",
     "react": "18.2.0",
     "react-native": "0.73.6"
   },

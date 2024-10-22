@@ -92,7 +92,7 @@ export class ExpoPlayAudioStream {
    */
   static async pauseAudio(): Promise<void> {
     try {
-      return await ExpoPlayAudioStreamModule.pause();
+      return await ExpoPlayAudioStreamModule.pauseAudio();
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to pause audio: ${error}`);
@@ -106,7 +106,7 @@ export class ExpoPlayAudioStream {
    */
   static async stopAudio(): Promise<void> {
     try {
-      return await ExpoPlayAudioStreamModule.stop();
+      return await ExpoPlayAudioStreamModule.stopAudio();
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to stop audio: ${error}`);

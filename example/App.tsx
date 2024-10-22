@@ -61,7 +61,16 @@ export default function App() {
         }}
         title="Stream B"
       />
-      <View style={{ height: 10 }}>
+      <View style={{ height: 10, marginBottom: 10 }}>
+        <Text>====================</Text>
+      </View>
+      <Button
+        onPress={async () => {
+          await ExpoPlayAudioStream.pauseAudio();
+        }}
+        title="Pause"
+      />
+      <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>
       </View>
       <Button
@@ -70,7 +79,7 @@ export default function App() {
         }}
         title="Stream A"
       />
-      <View style={{ height: 10 }}>
+       <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>
       </View>
       <Button
@@ -95,7 +104,7 @@ export default function App() {
         }}
         title="Start Recording"
       />
-       <View style={{ height: 10 }}>
+       <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>
       </View>
       <Button
@@ -109,7 +118,7 @@ export default function App() {
         }}
         title="Stop Recording"
       />
-      <View style={{ height: 10 }}>
+       <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>
       </View>
       <Button

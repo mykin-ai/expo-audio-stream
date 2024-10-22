@@ -101,7 +101,7 @@ class AudioSessionManager {
                     Logger.debug("Destroying playback")
                     self.destroyPlayerNode()
                 }
-                
+                 
                 try self.restartAudioSessionForPlayback()
             case .categoryChange:
                 print("Category Changed")
@@ -210,11 +210,13 @@ class AudioSessionManager {
         }
         
         do {
+            Logger.debug("Engine is Running \(self.audioEngine.isRunning)")
             if !self.audioEngine.isRunning {
                 Logger.debug("Starting Engine Again")
                 try self.audioEngine.start()
             }
             
+            Logger.debug("Player node is playing \(self.audioPlayerNode!.isPlaying)")
             if let playerNode = self.audioPlayerNode, !playerNode.isPlaying {
                 Logger.debug("Starting Player")
                 playerNode.play()
@@ -228,11 +230,14 @@ class AudioSessionManager {
     }
     
     func stopAudio(promise: Promise) {
+        Logger.debug("Stopping Audio")
           // Stop the audio player node
         if let playerNode = self.audioPlayerNode, playerNode.isPlaying {
+            Logger.debug("Player is playing stopping")
             playerNode.stop()
         }
         if !self.bufferQueue.isEmpty {
+            Logger.debug("Queue is not empty clearing")
             self.bufferQueue.removeAll()
         }
         self.destroyPlayerNode()
@@ -251,7 +256,7 @@ class AudioSessionManager {
     
     func pauseAudio() {
         if let node = audioPlayerNode, self.audioEngine.isRunning, node.isPlaying {
-            node.pause()
+            node.stop()
         } else {
             print("Cannot pause: Engine is not running or node is unavailable.")
         }
@@ -271,7 +276,7 @@ class AudioSessionManager {
     }
     
     private func scheduleNextBuffer() {
-        guard self.audioEngine.isRunning else {
+        guard let audioNode = self.audioPlayerNode, self.audioEngine.isRunning, audioNode.isPlaying else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { // Check every 50 milliseconds
                 self.scheduleNextBuffer()
             }
@@ -482,10 +487,12 @@ class AudioSessionManager {
     }
     
     private func destroyPlayerNode() {
+        Logger.debug("Destriong audio node")
         guard let playerNode = self.audioPlayerNode else { return }
 
         // Stop and detach the node
         if playerNode.isPlaying {
+            Logger.debug("Destriong audio node payer is playing, stopping it")
             playerNode.stop()
         }
         self.audioEngine.disconnectNodeOutput(playerNode)
