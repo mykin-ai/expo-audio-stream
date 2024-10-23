@@ -97,12 +97,16 @@ class AudioSessionManager {
         do {
             switch reason {
             case .newDeviceAvailable, .oldDeviceUnavailable:
-                if self.audioPlayerNode != nil {
-                    Logger.debug("Destroying playback")
+                if let node = audioPlayerNode, self.audioEngine.isRunning, node.isPlaying {
+                    node.pause()
+                    node.stop()
+                    self.audioEngine.stop()
                     self.destroyPlayerNode()
+                    self.audioEngine = AVAudioEngine()
+                } else {
+                    self.destroyPlayerNode()
+                    try self.restartAudioSessionForPlayback()
                 }
-                 
-                try self.restartAudioSessionForPlayback()
             case .categoryChange:
                 print("Category Changed")
             default:
@@ -636,13 +640,17 @@ class AudioSessionManager {
             
             // Update RIFF chunk size at offset 4
             fileHandle.seek(toFileOffset: 4)
-            let fileSizeBytes = UInt32(fileSize).littleEndianBytes
-            fileHandle.write(Data(fileSizeBytes))
-            
-            // Update data chunk size at offset 40
-            fileHandle.seek(toFileOffset: 40)
-            let dataSizeBytes = UInt32(dataSize).littleEndianBytes
-            fileHandle.write(Data(dataSizeBytes))
+            if (fileSize > 0) {
+                let fileSizeBytes = UInt32(fileSize).littleEndianBytes
+                fileHandle.write(Data(fileSizeBytes))
+                
+                // Update data chunk size at offset 40
+                fileHandle.seek(toFileOffset: 40)
+                let dataSizeBytes = UInt32(dataSize).littleEndianBytes
+                fileHandle.write(Data(dataSizeBytes))
+            } else {
+                Logger.debug("File size is negative which means it is an error before")
+            }
             
         } catch let error {
             Logger.debug("Error updating WAV header: \(error)")

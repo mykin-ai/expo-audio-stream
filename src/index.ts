@@ -16,12 +16,14 @@ export class ExpoPlayAudioStream {
     recordingConfig: RecordingConfig
   ): Promise<{
     recordingResult: StartRecordingResult;
-    subscription: Subscription;
+    subscription?: Subscription;
   }> {
-    try {
-      const { onAudioStream, ...options } = recordingConfig;
+    const { onAudioStream, ...options } = recordingConfig;
 
-      const subscription = addAudioEventListener(
+    let subscription: Subscription | undefined;
+
+    if (onAudioStream && typeof onAudioStream == 'function') {
+      subscription = addAudioEventListener(
         async (event: AudioEventPayload) => {
           const { fileUri, deltaSize, totalSize, position, encoded } = event;
           if (!encoded) {
@@ -39,13 +41,16 @@ export class ExpoPlayAudioStream {
           });
         }
       );
+    }
 
+    try {
       const recordingResult = await ExpoPlayAudioStreamModule.startRecording(
         options
       );
       return { recordingResult, subscription };
     } catch (error) {
       console.error(error);
+      subscription?.remove();
       throw new Error(`Failed to start recording: ${error}`);
     }
   }
