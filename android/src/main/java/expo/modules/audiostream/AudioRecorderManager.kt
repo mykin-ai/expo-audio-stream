@@ -420,8 +420,9 @@ class AudioRecorderManager(
         promise.resolve(fileList)
     }
 
-    fun clearAudioStorage() {
+    fun clearAudioStorage(promise: Promise) {
         audioFileHandler.clearAudioStorage()
+        promise.resolve(null)
     }
 
     private fun recordingProcess() {

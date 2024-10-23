@@ -151,6 +151,11 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
             audioSessionManager.stopAudio(promise: promise)
         }
         
+        AsyncFunction("listAudioFiles") { (promise: Promise) in
+            let result = listAudioFiles()
+            promise.resolve(result)
+        }
+        
         /// Clears all audio files stored in the document directory.
         Function("clearAudioFiles") {
             clearAudioFiles()

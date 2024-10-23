@@ -78,7 +78,16 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         }
 
         AsyncFunction("pauseAudio") { promise: Promise -> audioPlaybackManager.stopPlayback(promise) }
+
         AsyncFunction("stopAudio") { promise: Promise -> audioPlaybackManager.stopPlayback(promise) }
+
+        AsyncFunction("clearAudioFiles") { promise: Promise ->
+            audioRecorderManager.clearAudioStorage(promise)
+        }
+
+        AsyncFunction("listAudioFiles") { promise: Promise ->
+            audioRecorderManager.listAudioFiles(promise)
+        }
     }
     private fun initializeManager() {
         val androidContext =
