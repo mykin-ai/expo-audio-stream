@@ -33,6 +33,7 @@
         "projectId": "25f2fa48-a72b-47f2-884a-6c0e4f344684"
       }
     },
-    "owner": "mykin-ai"
+    "owner": "mykin-ai",
+    "plugins": ["../app.plugin.js"]
   }
 }
