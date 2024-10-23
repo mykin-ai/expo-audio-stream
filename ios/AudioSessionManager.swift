@@ -104,6 +104,9 @@ class AudioSessionManager {
                     self.destroyPlayerNode()
                     self.audioEngine = AVAudioEngine()
                 } else {
+                    if self.audioEngine.isRunning {
+                       self.audioEngine.stop()
+                    }
                     self.destroyPlayerNode()
                     try self.restartAudioSessionForPlayback()
                 }
