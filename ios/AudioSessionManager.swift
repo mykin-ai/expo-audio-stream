@@ -252,14 +252,20 @@ class AudioSessionManager {
         } else {
             Logger.debug("Queue is empty")
         }
+        resolver(nil)
     }
     
-    func pauseAudio() {
+    func pauseAudio(promise: Promise) {
         if let node = audioPlayerNode, self.audioEngine.isRunning, node.isPlaying {
+            node.pause()
             node.stop()
+            self.audioEngine.stop()
+            self.destroyPlayerNode()
+            self.audioEngine = AVAudioEngine()
         } else {
             print("Cannot pause: Engine is not running or node is unavailable.")
         }
+        promise.resolve(nil)
     }
     
     private func restartAudioSessionForPlayback() throws {
@@ -344,7 +350,7 @@ class AudioSessionManager {
             Logger.debug("Debug: Configuring audio session with sample rate: \(settings.sampleRate) Hz")
             
             // Create an audio format with the desired sample rate
-            //let desiredFormat = AVAudioFormat(commonFormat: commonFormat, sampleRate: newSettings.sampleRate, channels: UInt32(newSettings.numberOfChannels), interleaved: true)
+            let desiredFormat = AVAudioFormat(commonFormat: commonFormat, sampleRate: newSettings.sampleRate, channels: UInt32(newSettings.numberOfChannels), interleaved: true)
             
             // Check if the input node supports the desired format
             let inputNode = audioEngine.inputNode

@@ -142,8 +142,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
         }
 
         AsyncFunction("pauseAudio") { (promise: Promise) in
-            audioSessionManager.pauseAudio()
-            promise.resolve(nil)
+            audioSessionManager.pauseAudio(promise: promise)
         }
 
 
