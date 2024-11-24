@@ -14,7 +14,7 @@ const withRecordingPermission: ConfigPlugin<{
         console.warn('No previous permissions provided')
     }
     config = withInfoPlist(config, (config) => {
-        config.modResults['NSMicrophoneUsageDescription'] = MICROPHONE_USAGE
+        config.modResults['NSMicrophoneUsageDescription'] = config.modResults['NSMicrophoneUsageDescription'] || MICROPHONE_USAGE
 
         // Add audio to UIBackgroundModes to allow background audio recording
         const existingBackgroundModes =
