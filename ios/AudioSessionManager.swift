@@ -277,7 +277,11 @@ class AudioSessionManager {
         promise.resolve(nil)
     }
     
-    private func restartAudioSessionForPlayback() throws {       
+    private func restartAudioSessionForPlayback() throws {
+        Logger.debug("Restarting Audio Session")
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.playback, mode: .voicePrompt)
+        try audioSession.setActive(true)
         Logger.debug("Reattaching the nodes")
         self.audioEngine = AVAudioEngine()
         

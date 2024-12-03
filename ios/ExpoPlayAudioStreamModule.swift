@@ -7,8 +7,6 @@ let audioDataEvent: String = "AudioData"
 public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
     private let audioController = AudioController()
     private let audioSessionManager = AudioSessionManager()
-    private var isRecording: Bool = false
-    private var isPlayback: Bool = false
 
     public func definition() -> ModuleDefinition {
         Name("ExpoPlayAudioStream")
@@ -36,16 +34,6 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
         ///     - `maxRecentDataDuration`: The maximum duration of recent data to keep for processing (default is 10.0 seconds).
         ///   - promise: A promise to resolve with the recording settings or reject with an error.
         AsyncFunction("startRecording") { (options: [String: Any], promise: Promise) in
-            if !self.isRecording {
-                Logger.debug("Initializing audio recording")
-                let audioSession = AVAudioSession.sharedInstance()
-                try audioSession.setCategory(
-                    .playAndRecord, mode: .voiceChat,
-                    options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
-                try audioSession.setActive(true)
-            }
-            self.isRecording = true
-            self.isPlayback = false
             // Extract settings from provided options, using default values if necessary
             let sampleRate = options["sampleRate"] as? Double ?? 16000.0 // it fails if not 48000, why?
             let numberOfChannels = options["channelConfig"] as? Int ?? 1 // Mono channel configuration
@@ -121,13 +109,6 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
         
         
         AsyncFunction("playAudio") { (base64chunk: String, turnId: String, promise: Promise) in
-            if !self.isPlayback {
-                let audioSession = AVAudioSession.sharedInstance()
-                try audioSession.setCategory(.playback, mode: .default)
-                try audioSession.setActive(true)
-            }
-            self.isPlayback = true
-            self.isRecording = false
             audioSessionManager.playAudio(base64chunk, turnId, resolver: { _ in
                 promise.resolve(nil)
             }, rejecter: { code, message, error in
@@ -157,10 +138,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
 
 
         AsyncFunction("stopAudio") { promise in
-            if self.isPlayback {
-                audioSessionManager.stopAudio(promise: promise)
-                self.isPlayback = false
-            }
+            audioSessionManager.stopAudio(promise: promise)
         }
         
         AsyncFunction("listAudioFiles") { (promise: Promise) in
