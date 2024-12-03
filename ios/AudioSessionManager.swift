@@ -263,23 +263,21 @@ class AudioSessionManager {
     }
     
     func pauseAudio(promise: Promise) {
+        Logger.debug("Pausing Audio")
         if let node = audioPlayerNode, self.audioEngine.isRunning, node.isPlaying {
+            Logger.debug("Pausing audio. Audio engine is running and player node is playing")
             node.pause()
             node.stop()
             self.audioEngine.stop()
             self.destroyPlayerNode()
             self.audioEngine = AVAudioEngine()
         } else {
-            print("Cannot pause: Engine is not running or node is unavailable.")
+            Logger.debug("Cannot pause: Engine is not running or node is unavailable.")
         }
         promise.resolve(nil)
     }
     
-    private func restartAudioSessionForPlayback() throws {
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playback, mode: .default)
-        try audioSession.setActive(true)
-        
+    private func restartAudioSessionForPlayback() throws {       
         Logger.debug("Reattaching the nodes")
         self.audioEngine = AVAudioEngine()
         
@@ -352,12 +350,9 @@ class AudioSessionManager {
         pausedDuration = 0
         isPaused = false
         
-        let session = AVAudioSession.sharedInstance()
         do {
+            let session = AVAudioSession.sharedInstance()
             Logger.debug("Debug: Configuring audio session with sample rate: \(settings.sampleRate) Hz")
-            
-            // Create an audio format with the desired sample rate
-            let desiredFormat = AVAudioFormat(commonFormat: commonFormat, sampleRate: newSettings.sampleRate, channels: UInt32(newSettings.numberOfChannels), interleaved: true)
             
             // Check if the input node supports the desired format
             let inputNode = audioEngine.inputNode
@@ -367,18 +362,17 @@ class AudioSessionManager {
                 newSettings.sampleRate = session.sampleRate
             }
             
-            try session.setCategory(.playAndRecord)
-            try session.setMode(.default)
+            try session.setCategory(.playAndRecord, mode: .videoChat, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
             try session.setPreferredSampleRate(settings.sampleRate)
             try session.setPreferredIOBufferDuration(1024 / settings.sampleRate)
             try session.setActive(true)
-            Logger.debug("Debug: Audio session activated successfully.")
             
             let actualSampleRate = session.sampleRate
             if actualSampleRate != newSettings.sampleRate {
                 Logger.debug("Debug: Preferred sample rate not set. Falling back to hardware sample rate: \(actualSampleRate) Hz")
                 newSettings.sampleRate = actualSampleRate
             }
+            Logger.debug("Debug: Audio session is successfully configured. Actual sample rate is \(actualSampleRate) Hz")
             
             recordingSettings = newSettings  // Update the class property with the new settings
         } catch {
@@ -393,7 +387,6 @@ class AudioSessionManager {
             Logger.debug("Error: Failed to create audio format with the specified bit depth.")
             return StartRecordingResult(error: "Error: Failed to create audio format with the specified bit depth.")
         }
-        
         
         audioEngine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: audioFormat) { [weak self] (buffer, time) in
             guard let self = self else {
@@ -441,8 +434,17 @@ class AudioSessionManager {
             return RecordingResult(fileUri: "",
                                     error: "Recording is not active")
         }
+        if self.audioPlayerNode != nil {
+            Logger.debug("Destroying playback")
+            self.destroyPlayerNode()
+        }
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
+        do {
+            try self.restartAudioSessionForPlayback()
+        } catch {
+            Logger.debug("Error restarting audio session for playback: \(error)")
+        }
         isRecording = false
         
         guard let fileURL = recordingFileURL, let startTime = startTime, let settings = recordingSettings else {
@@ -470,13 +472,6 @@ class AudioSessionManager {
             
             // Update the WAV header with the correct file size
             updateWavHeader(fileURL: fileURL, totalDataSize: fileSize - 44) // Subtract the header size to get audio data size
-            
-            if self.audioPlayerNode != nil {
-                Logger.debug("Destroying playback")
-                self.destroyPlayerNode()
-            }
-            
-            try self.restartAudioSessionForPlayback()
             
             let result = RecordingResult(
                 fileUri: fileURL.absoluteString,
@@ -627,6 +622,38 @@ class AudioSessionManager {
     }
     
     
+    private func tryConvertToFormat(inputBuffer buffer: AVAudioPCMBuffer, desiredSampleRate sampleRate: Double, desiredChannel channels: AVAudioChannelCount) -> AVAudioPCMBuffer? {
+        var error: NSError? = nil
+        var commonFormat: AVAudioCommonFormat = .pcmFormatInt16
+        switch recordingSettings?.bitDepth {
+        case 16:
+            commonFormat = .pcmFormatInt16
+        case 32:
+            commonFormat = .pcmFormatInt32
+        default:
+            Logger.debug("Unsupported bit depth. Defaulting to 16-bit PCM")
+            commonFormat = .pcmFormatInt16
+        }
+        guard let nativeInputFormat = AVAudioFormat(commonFormat: commonFormat, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: true) else {
+            Logger.debug("AudioSessionManager: Failed to convert to desired format. AudioFormat is corrupted.")
+            return nil
+        }
+        let desiredFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: channels, interleaved: false)!
+        let inputAudioConverter = AVAudioConverter(from: nativeInputFormat, to: desiredFormat)!
+        
+        let convertedBuffer = AVAudioPCMBuffer(pcmFormat: desiredFormat, frameCapacity: 1024)!
+        let status = inputAudioConverter.convert(to: convertedBuffer, error: &error, withInputFrom: {inNumPackets, outStatus in
+           outStatus.pointee = .haveData
+           buffer.frameLength = inNumPackets
+           return buffer
+        })
+        if status == .haveData {
+            return convertedBuffer
+        }
+        return nil
+    }
+    
+    
     
     /// Updates the WAV header with the correct file size.
     /// - Parameters:
@@ -678,11 +705,12 @@ class AudioSessionManager {
             if let resampledBuffer = resampleAudioBuffer(buffer, from: buffer.format.sampleRate, to: targetSampleRate) {
                 finalBuffer = resampledBuffer
             } else {
-                Logger.debug("Failed to resample audio buffer. Using manual resampling buffer.")
-                Logger.debug("Failed to resample audio buffer. Using manual resample buffer.")
-                if let manualResampleBuffer = self.manualResampleAudioBuffer(buffer, from: buffer.format.sampleRate, to: targetSampleRate) {
-                    finalBuffer = manualResampleBuffer
+                Logger.debug("Fallback to AVAudioConverter. Converting from \(buffer.format.sampleRate) Hz to \(targetSampleRate) Hz")
+                
+                if let convertedBuffer = self.tryConvertToFormat(inputBuffer: buffer, desiredSampleRate: targetSampleRate, desiredChannel: 1) {
+                    finalBuffer = convertedBuffer
                 } else {
+                    Logger.debug("Failed to convert to desired format.")
                     finalBuffer = buffer
                 }
             }
