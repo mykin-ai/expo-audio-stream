@@ -4,9 +4,20 @@ import ExpoModulesCore
 
 let audioDataEvent: String = "AudioData"
 
-public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
+public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate {
     private let audioController = AudioController()
     private let audioSessionManager = AudioSessionManager()
+    private lazy var microphone: Microphone = {
+        let microphone = Microphone()
+        return microphone
+    }()
+    
+    private lazy var soundPlayer: SoundPlayer = {
+        let soundPlayer = SoundPlayer()
+        return soundPlayer
+    }()
+   
+    private var inittedAudioSession: Bool = false
 
     public func definition() -> ModuleDefinition {
         Name("ExpoPlayAudioStream")
@@ -17,6 +28,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
         OnCreate {
             print("Setting up Audio Session Manager")
             audioSessionManager.delegate = self
+            microphone.delegate = self
         }
         
         /// Asynchronously starts audio recording with the given settings.
@@ -146,11 +158,99 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
             promise.resolve(result)
         }
         
+        AsyncFunction("playSound") { (base64Chunk: String, turnId: String, promise: Promise) in
+            Logger.debug("Play sound")
+            do {
+                if !inittedAudioSession {
+                    try ensureInittedAudioSession()
+                }
+                try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, resolver: {
+                    _ in promise.resolve(nil)
+                }, rejecter: {code, message, error in
+                    promise.reject(code ?? "ERR_UNKNOWN", message ?? "Unknown error")
+                })
+            } catch {
+                print("Error enqueuing audio: \(error.localizedDescription)")
+            }
+        }
+        
+        AsyncFunction("stopSound") { (promise: Promise) in
+            soundPlayer.stop(promise)
+        }
+        
+        AsyncFunction("interruptSound") { (promise: Promise) in
+            soundPlayer.interrupt(promise)
+        }
+        
+        Function("resumeSound") {
+            soundPlayer.resume()
+        }
+        
+        AsyncFunction("startMicrophone") { (options: [String: Any], promise: Promise) in
+            
+            if !inittedAudioSession {
+                do {
+                    try ensureInittedAudioSession()
+                } catch {
+                    promise.reject("ERROR", "Failed to init audio session \(error.localizedDescription)")
+                    return
+                }
+            }
+            // Extract settings from provided options, using default values if necessary
+            let sampleRate = options["sampleRate"] as? Double ?? 16000.0 // it fails if not 48000, why?
+            let numberOfChannels = options["channelConfig"] as? Int ?? 1 // Mono channel configuration
+            let bitDepth = options["audioFormat"] as? Int ?? 16 // 16bits
+            let interval = options["interval"] as? Int ?? 1000
+            
+            
+            // Create recording settings
+            let settings = RecordingSettings(
+                sampleRate: sampleRate,
+                desiredSampleRate: sampleRate,
+                numberOfChannels: numberOfChannels,
+                bitDepth: bitDepth,
+                maxRecentDataDuration: nil,
+                pointsPerSecond: nil
+            )
+            
+            if let result = self.microphone.startRecording(settings: settings, intervalMilliseconds: interval) {
+                if let resError = result.error {
+                    promise.reject("ERROR", resError)
+                } else {
+                    let resultDict: [String: Any] = [
+                        "fileUri": result.fileUri ?? "",
+                        "channels": result.channels ?? 1,
+                        "bitDepth": result.bitDepth ?? 16,
+                        "sampleRate": result.sampleRate ?? 48000,
+                        "mimeType": result.mimeType ?? "",
+                    ]
+                    promise.resolve(resultDict)
+                }
+            } else {
+                promise.reject("ERROR", "Failed to start recording.")
+            }
+        }
+        
+        AsyncFunction("stopMicrophone") { (promise: Promise) in
+            microphone.stopRecording()
+            promise.resolve(nil)
+        }
+    
         /// Clears all audio files stored in the document directory.
         Function("clearAudioFiles") {
             clearAudioFiles()
         }
     }
+    
+    private func ensureInittedAudioSession() throws {
+         if self.inittedAudioSession { return }
+         let audioSession = AVAudioSession.sharedInstance()
+         try audioSession.setCategory(
+             .playAndRecord, mode: .voiceChat,
+             options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
+         try audioSession.setActive(true)
+         inittedAudioSession = true
+     }
     
     /// Handles the reception of audio data from the AudioStreamManager.
     ///
@@ -244,5 +344,23 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate {
             print("Error listing audio files:", error.localizedDescription)
             return []
         }
+    }
+    
+    func onMicrophoneData(_ microphoneData: Data, _ microphoneData16kHz: Data) {
+        let encodedData = microphoneData.base64EncodedString()
+        let encodedData16kHz = microphoneData16kHz.base64EncodedString()
+        // Construct the event payload similar to Android
+        let eventBody: [String: Any] = [
+            "fileUri": "",
+            "lastEmittedSize": 0,
+            "position": 0, // Add position of the chunk in ms since
+            "encoded": encodedData,
+            "encoded16kHz": encodedData16kHz,
+            "deltaSize": 0,
+            "totalSize": 0,
+            "mimeType": ""
+        ]
+        // Emit the event to JavaScript
+        sendEvent(audioDataEvent, eventBody)
     }
 }
