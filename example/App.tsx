@@ -11,10 +11,9 @@ import { Audio } from 'expo-av';
 
 const ANDROID_SAMPLE_RATE = 16000;
 const IOS_SAMPLE_RATE = 48000;
-const BIT_DEPTH = 16;
 const CHANNELS = 1;
 const ENCODING = "pcm_16bit";
-const RECORDING_INTERVAL = 50;
+const RECORDING_INTERVAL = 100;
 
 const turnId1 = 'turnId1';
 const turnId2 = 'turnId2';
@@ -23,30 +22,7 @@ const turnId2 = 'turnId2';
 export default function App() {
 
 
-  const eventListenerSubscriptionRef = useRef<Subscription | null>(null);
-
-  useEffect(() => {
-    async function run() {
-      try {
-        // console.log("setPlayAndRecord");
-        // //await ExpoPlayAudioStream.setVolume(100);
-        // await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
-        // await ExpoPlayAudioStream.setPlayAndRecord();
-        // console.log("after setPlayAndRecord");
-        // //await new Promise((resolve) => setTimeout(resolve, 2000));
-        // await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
-        // console.log("streamed A");
-        // await ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
-        // console.log("streamed B");
-        // console.log("streaming A & B");
-        //ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleA);
-        //ExpoPlayAudioStream.streamRiff16Khz16BitMonoPcmChunk(sampleB);
-      } catch (error) {
-        console.error(error);
-      }
-    }
-    run();
-  }, []);
+  const eventListenerSubscriptionRef = useRef<Subscription | undefined>(undefined);
 
   const onAudioCallback = async (audio: AudioDataEvent) => {
     console.log(audio.data.slice(0, 100));
@@ -59,7 +35,7 @@ export default function App() {
         onPress={async () => {
           await ExpoPlayAudioStream.playAudio(sampleB, turnId1);
         }}
-        title="Stream B"
+        title="Play sample B"
       />
       <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>
@@ -68,7 +44,7 @@ export default function App() {
         onPress={async () => {
           await ExpoPlayAudioStream.pauseAudio();
         }}
-        title="Pause"
+        title="Pause Audio"
       />
       <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>
@@ -77,7 +53,7 @@ export default function App() {
         onPress={async () => {
           await ExpoPlayAudioStream.playAudio(sampleA, turnId2);
         }}
-        title="Stream A"
+        title="Play sample A"
       />
        <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>
@@ -113,7 +89,7 @@ export default function App() {
           await ExpoPlayAudioStream.stopRecording();
           if (eventListenerSubscriptionRef.current) {
             eventListenerSubscriptionRef.current.remove();
-            eventListenerSubscriptionRef.current = null;
+            eventListenerSubscriptionRef.current = undefined;
           }
         }}
         title="Stop Recording"

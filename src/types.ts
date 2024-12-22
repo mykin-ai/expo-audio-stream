@@ -12,6 +12,7 @@ export interface StartRecordingResult {
 
 export interface AudioDataEvent {
     data: string | Float32Array
+    data16kHz?: string | Float32Array
     position: number
     fileUri: string
     eventDataSize: number
