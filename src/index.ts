@@ -7,7 +7,7 @@ import {
   StartRecordingResult,
 } from "./types";
 
-import { addAudioEventListener, AudioEventPayload } from "./events";
+import { addAudioEventListener, addSoundChunkPlayedListener, AudioEventPayload, SoundChunkPlayedEventPayload } from "./events";
 
 export class ExpoPlayAudioStream {
   /**
@@ -262,6 +262,19 @@ export class ExpoPlayAudioStream {
     }
   }
 
+  /**
+   * Subscribes to audio events emitted during recording/streaming.
+   * @param onMicrophoneStream - Callback function that will be called when audio data is received.
+   * The callback receives an AudioDataEvent containing:
+   * - data: Base64 encoded audio data at original sample rate
+   * - data16kHz: Optional base64 encoded audio data resampled to 16kHz
+   * - position: Current position in the audio stream
+   * - fileUri: URI of the recording file
+   * - eventDataSize: Size of the current audio data chunk
+   * - totalSize: Total size of recorded audio so far
+   * @returns {Subscription} A subscription object that can be used to unsubscribe from the events
+   * @throws {Error} If encoded audio data is missing from the event
+   */
   static subscribeToAudioEvents(
     onMicrophoneStream: (event: AudioDataEvent) => Promise<void>
   ): Subscription {
@@ -282,10 +295,23 @@ export class ExpoPlayAudioStream {
       });
     });
   }
+
+  /**
+   * Subscribes to events emitted when a sound chunk has finished playing.
+   * @param onSoundChunkPlayed - Callback function that will be called when a sound chunk is played.
+   * The callback receives a SoundChunkPlayedEventPayload indicating if this was the final chunk.
+   * @returns {Subscription} A subscription object that can be used to unsubscribe from the events.
+   */
+  static subscribeToSoundChunkPlayed(
+    onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>
+  ): Subscription {
+    return addSoundChunkPlayedListener(onSoundChunkPlayed);
+  }
 }
 
 export {
   AudioDataEvent,
+  SoundChunkPlayedEventPayload,
   AudioRecording,
   RecordingConfig,
   StartRecordingResult,

@@ -3,8 +3,9 @@ import AVFoundation
 import ExpoModulesCore
 
 let audioDataEvent: String = "AudioData"
+let soundIsPlayedEvent: String = "SoundChunkPlayed"
 
-public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate {
+public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate, SoundPlayerDelegate {
     private let audioController = AudioController()
     private let audioSessionManager = AudioSessionManager()
     private lazy var microphone: Microphone = {
@@ -23,12 +24,13 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         Name("ExpoPlayAudioStream")
         
         // Defines event names that the module can send to JavaScript.
-        Events([audioDataEvent])
+        Events([audioDataEvent, soundIsPlayedEvent])
         
         OnCreate {
             print("Setting up Audio Session Manager")
             audioSessionManager.delegate = self
             microphone.delegate = self
+            soundPlayer.delegate = self
         }
         
         /// Asynchronously starts audio recording with the given settings.
@@ -362,5 +364,9 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         ]
         // Emit the event to JavaScript
         sendEvent(audioDataEvent, eventBody)
+    }
+    
+    func onSoundChunkPlayed(_ isFinal: Bool) {
+        sendEvent(soundIsPlayedEvent, ["isFinal": isFinal])
     }
 }

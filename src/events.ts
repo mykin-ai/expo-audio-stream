@@ -21,8 +21,18 @@ export interface AudioEventPayload {
     streamUuid: string
 }
 
+export type SoundChunkPlayedEventPayload = {
+    isFinal: boolean
+}
+
 export function addAudioEventListener(
     listener: (event: AudioEventPayload) => Promise<void>
 ): Subscription {
     return emitter.addListener<AudioEventPayload>('AudioData', listener)
+}
+
+export function addSoundChunkPlayedListener(
+    listener: (event: SoundChunkPlayedEventPayload) => Promise<void>
+): Subscription {
+    return emitter.addListener<SoundChunkPlayedEventPayload>('SoundChunkPlayed', listener)
 }

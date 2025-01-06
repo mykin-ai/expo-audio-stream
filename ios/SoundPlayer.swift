@@ -2,6 +2,7 @@ import AVFoundation
 import ExpoModulesCore
 
 class SoundPlayer {
+    weak var delegate: SoundPlayerDelegate?
     private var audioEngine: AVAudioEngine!
 
     private var inputNode: AVAudioInputNode!
@@ -13,6 +14,8 @@ class SoundPlayer {
     private let bufferAccessQueue = DispatchQueue(label: "com.kinexpoaudiostream.bufferAccessQueue")
     
     private var audioQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock, turnId: String)] = []  // Queue for audio segments
+    // needed to track segments in progress in order to send playbackevents properly
+    private var segmentsLeftToPlay: Int = 0
     private var isPlaying: Bool = false  // Tracks if audio is currently playing
     private var isInterrupted: Bool = false
     private var isAudioEngineIsSetup: Bool = false
@@ -58,6 +61,8 @@ class SoundPlayer {
             self.audioPlayerNode.pause()
             self.audioPlayerNode.stop()
             
+            self.segmentsLeftToPlay = 0
+            
             self.isPlaying = false
         } else {
             Logger.debug("Player is not playing")
@@ -102,6 +107,7 @@ class SoundPlayer {
             }
             let bufferTuple = (buffer: pcmBuffer, promise: resolver, turnId: strTurnId)
             audioQueue.append(bufferTuple)
+            self.segmentsLeftToPlay += 1
             print("New Chunk \(isPlaying)")
             // If not already playing, start playback
             playNextInQueue()
@@ -132,6 +138,9 @@ class SoundPlayer {
                 self.audioQueue.removeFirst()
 
                 self.audioPlayerNode.scheduleBuffer(buffer) {
+                    self.segmentsLeftToPlay -= 1
+                    let isFinalSegment = self.segmentsLeftToPlay == 0
+                    self.delegate?.onSoundChunkPlayed(isFinalSegment)
                     promise(nil)
                     
 
