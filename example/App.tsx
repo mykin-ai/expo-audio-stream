@@ -28,6 +28,21 @@ export default function App() {
     console.log(audio.data.slice(0, 100));
   };
 
+  const playEventsListenerSubscriptionRef = useRef<Subscription | undefined>(undefined);
+
+  useEffect(() => {
+    playEventsListenerSubscriptionRef.current = ExpoPlayAudioStream.subscribeToSoundChunkPlayed(async (event) => {
+      console.log(event);
+    });
+
+    return () => {
+      if (playEventsListenerSubscriptionRef.current) {
+        playEventsListenerSubscriptionRef.current.remove();
+        playEventsListenerSubscriptionRef.current = undefined;
+      }
+    }
+  }, []);
+
   return (
     <View style={styles.container}>
       <Text>hi</Text>
@@ -51,7 +66,7 @@ export default function App() {
       </View>
       <Button
         onPress={async () => {
-          await ExpoPlayAudioStream.playAudio(sampleA, turnId2);
+          await ExpoPlayAudioStream.playSound(sampleA, turnId2);
         }}
         title="Play sample A"
       />
@@ -68,7 +83,7 @@ export default function App() {
           }
           const sampleRate =
             Platform.OS === "ios" ? IOS_SAMPLE_RATE : ANDROID_SAMPLE_RATE;
-          const { recordingResult, subscription } = await ExpoPlayAudioStream.startRecording({
+          const { recordingResult, subscription } = await ExpoPlayAudioStream.startMicrophone({
             interval: RECORDING_INTERVAL,
             sampleRate,
             channels: CHANNELS,
@@ -86,7 +101,7 @@ export default function App() {
       <Button
         onPress={async () => {
           
-          await ExpoPlayAudioStream.stopRecording();
+          await ExpoPlayAudioStream.stopMicrophone();
           if (eventListenerSubscriptionRef.current) {
             eventListenerSubscriptionRef.current.remove();
             eventListenerSubscriptionRef.current = undefined;

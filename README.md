@@ -65,7 +65,7 @@ const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (even
 // audioSubscription.remove();
 ```
 
-### Simultaneous Recording and Playback
+### Simultaneous Recording and Playback (⚠️ IOS only for now)
 
 ```javascript
 import { ExpoPlayAudioStream } from 'expo-audio-stream';

@@ -6,15 +6,23 @@ let audioDataEvent: String = "AudioData"
 let soundIsPlayedEvent: String = "SoundChunkPlayed"
 
 public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate, SoundPlayerDelegate {
-    private let audioController = AudioController()
-    private let audioSessionManager = AudioSessionManager()
+    private lazy var audioController: AudioController = AudioController()
+    
+    private lazy var audioSessionManager: AudioSessionManager = {
+        let audioSessionManager = AudioSessionManager()
+        audioSessionManager.delegate = self
+        return audioSessionManager
+    }()
+    
     private lazy var microphone: Microphone = {
         let microphone = Microphone()
+        microphone.delegate = self
         return microphone
     }()
     
     private lazy var soundPlayer: SoundPlayer = {
         let soundPlayer = SoundPlayer()
+        soundPlayer.delegate = self
         return soundPlayer
     }()
    
@@ -25,13 +33,6 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         
         // Defines event names that the module can send to JavaScript.
         Events([audioDataEvent, soundIsPlayedEvent])
-        
-        OnCreate {
-            print("Setting up Audio Session Manager")
-            audioSessionManager.delegate = self
-            microphone.delegate = self
-            soundPlayer.delegate = self
-        }
         
         /// Asynchronously starts audio recording with the given settings.
         ///
@@ -245,14 +246,25 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
     }
     
     private func ensureInittedAudioSession() throws {
-         if self.inittedAudioSession { return }
-         let audioSession = AVAudioSession.sharedInstance()
-         try audioSession.setCategory(
-             .playAndRecord, mode: .voiceChat,
-             options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
-         try audioSession.setActive(true)
-         inittedAudioSession = true
+        if self.inittedAudioSession { return }
+
+        self.promptForMicrophoneModes()
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(
+            .playAndRecord, mode: .voiceChat,
+            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
+        try audioSession.setActive(true)
+        inittedAudioSession = true
      }
+    
+    
+    private func promptForMicrophoneModes() {
+        guard #available(iOS 15.0, *) else {
+            return
+        }
+        
+        AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+    }
     
     /// Handles the reception of audio data from the AudioStreamManager.
     ///

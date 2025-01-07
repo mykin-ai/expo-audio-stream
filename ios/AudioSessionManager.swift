@@ -29,7 +29,7 @@ class AudioSessionManager {
     private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
 
     private var bufferQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock, turnId: String)] = []
-    private let bufferAccessQueue = DispatchQueue(label: "com.kinexpoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
+    private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
 
     
     internal var recordingFileURL: URL?

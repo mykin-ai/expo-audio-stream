@@ -8,6 +8,9 @@ import ExpoPlayAudioStreamModule from './ExpoPlayAudioStreamModule'
 
 const emitter = new EventEmitter(ExpoPlayAudioStreamModule)
 
+emitter.addListener('SoundChunkPlayed', (event: SoundChunkPlayedEventPayload) => {
+})
+
 export interface AudioEventPayload {
     encoded?: string
     encoded16kHz?: string
