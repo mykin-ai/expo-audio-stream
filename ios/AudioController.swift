@@ -8,7 +8,7 @@ public class AudioController {
     private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
 
     private var bufferQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock)] = []
-    private let bufferAccessQueue = DispatchQueue(label: "com.kinexpoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
+    private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
 
     private var isPlayingQueueA: Bool = false // Indicates which queue is currently in use for playback
 

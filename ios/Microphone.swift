@@ -57,13 +57,6 @@ class Microphone {
     private static let desiredInputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: false)!
     private let audioPlaybackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     
-    init() {
-        if #available(iOS 15.0, *) {
-            AVCaptureDevice.showSystemUserInterface(.microphoneModes)
-        } else {
-            // Fallback on earlier versions
-        }
-    }
 
     private func setupVoiceProcessing() {
         self.isMuted = false
@@ -82,7 +75,7 @@ class Microphone {
             // that they will be supported in all environments.
             // Notably, echo cancellation doesn't seem to work in the iOS simulator.
             try self.inputNode.setVoiceProcessingEnabled(true)
-            //try outputNode.setVoiceProcessingEnabled(true)
+            try outputNode.setVoiceProcessingEnabled(true)
         } catch {
             print("Error setting voice processing: \(error)")
             return
@@ -152,19 +145,20 @@ class Microphone {
     
     
     func startRecording(settings: RecordingSettings, intervalMilliseconds: Int) -> StartRecordingResult? {
-        if !self.isVoiceProcessingEnabled {
-            setupVoiceProcessing()
-        }
         guard !isRecording else {
             Logger.debug("Debug: Recording is already in progress.")
             return StartRecordingResult(error: "Recording is already in progress.")
         }
         
-        if audioEngine.isRunning  {
+        if self.audioEngine != nil && audioEngine.isRunning  {
             Logger.debug("Debug: Audio engine already running.")
             audioEngine.stop()
         }
         
+        if !self.isVoiceProcessingEnabled {
+            setupVoiceProcessing()
+        }
+       
         var newSettings = settings  // Make settings mutable
         
         // Determine the commonFormat based on bitDepth

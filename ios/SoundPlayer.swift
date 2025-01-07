@@ -11,7 +11,7 @@ class SoundPlayer {
     private var isMuted = false
     private var isVoiceProcessingEnabled: Bool = false
     
-    private let bufferAccessQueue = DispatchQueue(label: "com.kinexpoaudiostream.bufferAccessQueue")
+    private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue")
     
     private var audioQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock, turnId: String)] = []  // Queue for audio segments
     // needed to track segments in progress in order to send playbackevents properly
@@ -23,7 +23,66 @@ class SoundPlayer {
   
     private let audioPlaybackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     
+    init() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
     
+    /// Handles audio route changes (e.g. headphones connected/disconnected)
+    /// - Parameter notification: The notification object containing route change information
+    @objc private func handleRouteChange(notification: Notification) {
+        guard let info = notification.userInfo,
+              let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return
+        }
+        
+        Logger.debug("[SoundPlayer] Route is changed \(reason)")
+
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable:
+            if let node = audioPlayerNode, node.isPlaying {
+                node.pause()
+                node.stop()
+            }
+            self.audioEngine.stop()
+            self.detachOldAvNodesFromEngine()
+            
+            do {
+                try self.ensureAudioEngineIsSetup()
+            } catch {
+                Logger.debug("[SoundPlayer] Failed to setup audio engine: \(error.localizedDescription)")
+            }
+        case .categoryChange:
+            Logger.debug("[SoundPlayer] Audio Session category changed")
+        default:
+            break
+        }
+    }
+    
+    /// Detaches and cleans up the existing audio player node from the engine
+    private func detachOldAvNodesFromEngine() {
+        Logger.debug("[SoundPlayer] Detaching old audio node")
+        guard let playerNode = self.audioPlayerNode else { return }
+
+        // Stop and detach the node
+        if playerNode.isPlaying {
+            Logger.debug("[SoundPlayer] Destroying audio node, player is playing, stopping it")
+            playerNode.stop()
+        }
+        self.audioEngine.disconnectNodeOutput(playerNode)
+        self.audioEngine.detach(playerNode)
+
+        // Set to nil, ARC deallocates it if no other references exist
+        self.audioPlayerNode = nil
+    }
+    
+    /// Sets up the audio engine and player node if not already configured
+    /// - Throws: Error if audio engine setup fails
     private func ensureAudioEngineIsSetup() throws {
         self.audioEngine = AVAudioEngine()
                     
@@ -37,6 +96,8 @@ class SoundPlayer {
         try self.audioEngine.start()
     }
     
+    /// Clears all pending audio chunks from the playback queue
+    /// - Parameter promise: Promise to resolve when queue is cleared
     func clearAudioQueue(_ promise: Promise) {
         Logger.debug("[SoundPlayer] Clearing Audio Queue...")
         if !self.audioQueue.isEmpty {
@@ -48,7 +109,8 @@ class SoundPlayer {
         promise.resolve(nil)
     }
     
-    
+    /// Stops audio playback and clears the queue
+    /// - Parameter promise: Promise to resolve when stopped
     func stop(_ promise: Promise) {
         Logger.debug("[SoundPlayer] Stopping Audio")
         if !self.audioQueue.isEmpty {
@@ -70,16 +132,25 @@ class SoundPlayer {
         promise.resolve(nil)
     }
     
+    /// Interrupts audio playback
+    /// - Parameter promise: Promise to resolve when interrupted
     func interrupt(_ promise: Promise) {
         self.isInterrupted = true
         self.stop(promise)
     }
     
+    /// Resumes audio playback after interruption
     func resume() {
         self.isInterrupted = false
     }
     
-    
+    /// Plays an audio chunk from base64 encoded string
+    /// - Parameters:
+    ///   - base64String: Base64 encoded audio data
+    ///   - strTurnId: Identifier for the turn/segment
+    ///   - resolver: Promise resolver callback
+    ///   - rejecter: Promise rejection callback
+    /// - Throws: Error if audio processing fails
     public func play(
         audioChunk base64String: String,
         turnId strTurnId: String,
@@ -117,7 +188,7 @@ class SoundPlayer {
         }
     }
     
-    
+    /// Plays the next audio chunk in the queue if available
     private func playNextInQueue() {
         guard !audioQueue.isEmpty else {
             return
@@ -144,7 +215,6 @@ class SoundPlayer {
                     promise(nil)
                     
 
-                    let bufferDuration = Double(buffer.frameLength) / buffer.format.sampleRate
                     if !self.isInterrupted && !self.audioQueue.isEmpty {
                         self.playNextInQueue()
                     }
