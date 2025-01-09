@@ -3,6 +3,7 @@ import { ExpoPlayAudioStream } from "@mykin-ai/expo-audio-stream";
 import { useEffect, useRef } from "react";
 import { sampleA } from "./samples/sample-a";
 import { sampleB } from "./samples/sample-b";
+import { sampleC } from "./samples/sample-c";
 import {
   AudioDataEvent,
 } from "@mykin-ai/expo-audio-stream/types";
@@ -66,9 +67,18 @@ export default function App() {
       </View>
       <Button
         onPress={async () => {
-          await ExpoPlayAudioStream.playSound(sampleA, turnId2, false);
+          await ExpoPlayAudioStream.playSound(sampleA, turnId2);
         }}
         title="Play sample A"
+      />
+      <View style={{ height: 10, marginBottom: 10 }}>
+        <Text>====================</Text>
+      </View>
+      <Button
+        onPress={async () => {
+          await ExpoPlayAudioStream.playWav(sampleC);
+        }}
+        title="Play WAV fragment"
       />
        <View style={{ height: 10, marginBottom: 10 }}>
         <Text>====================</Text>

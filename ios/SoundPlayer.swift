@@ -8,7 +8,8 @@ class SoundPlayer {
     private var inputNode: AVAudioInputNode!
     private var audioPlayerNode: AVAudioPlayerNode!
     
-    private var isMuted = false
+    private var audioPlayer: AVAudioPlayer?
+    
     private var isVoiceProcessingEnabled: Bool = false
     
     private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue")
@@ -19,7 +20,6 @@ class SoundPlayer {
     private var isPlaying: Bool = false  // Tracks if audio is currently playing
     private var isInterrupted: Bool = false
     private var isAudioEngineIsSetup: Bool = false
-    public static let isLinear16PCM: Bool = true
   
     private let audioPlaybackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     
@@ -49,8 +49,12 @@ class SoundPlayer {
                 node.pause()
                 node.stop()
             }
-            self.audioEngine.stop()
-            self.detachOldAvNodesFromEngine()
+            if let audioEngine = self.audioEngine {
+                if audioEngine.isRunning {
+                    audioEngine.stop()
+                }
+                self.detachOldAvNodesFromEngine()
+            }
             
             do {
                 try self.ensureAudioEngineIsSetup()
@@ -144,6 +148,24 @@ class SoundPlayer {
         self.isInterrupted = false
     }
     
+    /// Plays a WAV audio file from base64 encoded data
+    /// - Parameter base64String: Base64 encoded WAV audio data
+    /// - Note: This method plays the audio directly without queueing, using AVAudioPlayer
+    /// - Important: The base64 string must represent valid WAV format audio data
+    public func playWav(base64Wav base64String: String) {
+        guard let data = Data(base64Encoded: base64String) else {
+            Logger.debug("[SoundPlayer] Invalid Base64 String [ \(base64String)]")
+            return
+        }
+        do {
+            self.audioPlayer = try AVAudioPlayer(data: data, fileTypeHint: AVFileType.wav.rawValue)
+            self.audioPlayer!.volume = 1.0
+            audioPlayer!.play()
+        } catch {
+            Logger.debug("[SoundPlayer] Error playing WAV audio [ \(error)]")
+        }
+    }
+    
     /// Plays an audio chunk from base64 encoded string
     /// - Parameters:
     ///   - base64String: Base64 encoded audio data
@@ -154,7 +176,6 @@ class SoundPlayer {
     public func play(
         audioChunk base64String: String,
         turnId strTurnId: String,
-        skipPlaybackEvent: Bool = false,
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) throws {
@@ -182,7 +203,7 @@ class SoundPlayer {
             self.segmentsLeftToPlay += 1
             print("New Chunk \(isPlaying)")
             // If not already playing, start playback
-            playNextInQueue(skipPlaybackEvent: skipPlaybackEvent)
+            playNextInQueue()
         } catch {
             Logger.debug("[SoundPlayer] Failed to enqueue audio chunk: \(error.localizedDescription)")
             rejecter("ERROR_SOUND_PLAYER", "Failed to enqueue audio chunk: \(error.localizedDescription)", nil)
@@ -190,7 +211,7 @@ class SoundPlayer {
     }
     
     
-    private func playNextInQueue(skipPlaybackEvent: Bool = false) {
+    private func playNextInQueue() {
         guard !audioQueue.isEmpty else {
             return
         }
@@ -213,14 +234,12 @@ class SoundPlayer {
                     self.segmentsLeftToPlay -= 1
                     let isFinalSegment = self.segmentsLeftToPlay == 0
                     
-                    if !skipPlaybackEvent {
-                        self.delegate?.onSoundChunkPlayed(isFinalSegment)
-                    }
+                    self.delegate?.onSoundChunkPlayed(isFinalSegment)
                     promise(nil)
                     
 
                     if !self.isInterrupted && !self.audioQueue.isEmpty {
-                        self.playNextInQueue(skipPlaybackEvent: skipPlaybackEvent)
+                        self.playNextInQueue()
                     }
                 }
             }

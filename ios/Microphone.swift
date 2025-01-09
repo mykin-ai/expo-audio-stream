@@ -21,7 +21,7 @@ class Microphone {
     private var audioPlayerNode: AVAudioPlayerNode = AVAudioPlayerNode()
     
     private var isMuted = false
-    private var isVoiceProcessingEnabled: Bool = false
+    public private(set) var isVoiceProcessingEnabled: Bool = false
     
     
     internal var lastEmissionTime: Date?
@@ -49,16 +49,10 @@ class Microphone {
     
     public static let sampleRate: Double = 44100
     public static let isLinear16PCM: Bool = true
-    // Linear16 PCM is a standard format well-supported by EVI (although you must send
-    // a `session_settings` message to inform EVI of the sample rate). Because there is
-    // a wide variance of the native format/ sample rate from input devices, we use the
-    // AVAudioConverter API to convert the audio to this standard format in order to
-    // remove all guesswork.
-    private static let desiredInputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: false)!
-    private let audioPlaybackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     
-
-    private func setupVoiceProcessing() {
+    private static let desiredInputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: false)!
+    
+    public func setupVoiceProcessing() {
         self.isMuted = false
         self.isVoiceProcessingEnabled = true
         audioEngine = AVAudioEngine()

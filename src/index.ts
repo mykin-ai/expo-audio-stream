@@ -149,9 +149,9 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<void>}
    * @throws {Error} If the sound fails to play.
    */
-  static async playSound(audio: string, turnId: string, skipPlaybackEvent: boolean = false): Promise<void> {
+  static async playSound(audio: string, turnId: string): Promise<void> {
     try {
-      await ExpoPlayAudioStreamModule.playSound(audio, turnId, skipPlaybackEvent);
+      await ExpoPlayAudioStreamModule.playSound(audio, turnId);
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to enqueue audio: ${error}`);
@@ -306,6 +306,22 @@ export class ExpoPlayAudioStream {
     onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>
   ): Subscription {
     return addSoundChunkPlayedListener(onSoundChunkPlayed);
+  }
+
+  /**
+   * Plays a WAV audio file from base64 encoded data.
+   * Unlike playSound(), this method plays the audio directly without queueing.
+   * @param {string} wavBase64 - Base64 encoded WAV audio data.
+   * @returns {Promise<void>} 
+   * @throws {Error} If the WAV audio fails to play.
+   */
+  static async playWav(wavBase64: string) {
+    try {
+      await ExpoPlayAudioStreamModule.playWav(wavBase64);
+    } catch (error) {
+      console.error(error);
+      throw new Error(`Failed to play wav: ${error}`);
+    }
   }
 }
 

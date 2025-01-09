@@ -87,11 +87,7 @@ async function handleSimultaneousRecordAndPlay() {
 
     // Play audio while recording is active
     const turnId = 'response-turn-1';
-    // Play with default behavior (emitting playback events)
     await ExpoPlayAudioStream.playSound(someAudioBase64, turnId);
-    
-    // Or play without emitting playback events
-    await ExpoPlayAudioStream.playSound(someAudioBase64, turnId, true);
 
     // Example of controlling playback during recording
     setTimeout(async () => {
@@ -153,7 +149,9 @@ These methods are specifically designed for scenarios where you need to record a
 
 - `stopMicrophone()`: Stops the microphone streaming when in simultaneous mode.
 
-- `playSound(audio: string, turnId: string, skipPlaybackEvent?: boolean)`: Plays a sound while recording is active. Uses voice processing to prevent feedback. The optional `skipPlaybackEvent` parameter (defaults to false) allows you to control whether playback completion events are emitted.
+- `playSound(audio: string, turnId: string)`: Plays a sound while recording is active. Uses voice processing to prevent feedback.
+
+- `playWav(base64Wav: string)`: Plays a WAV format audio directly. Useful for playing complete WAV files without chunking. The audio data should be base64 encoded WAV format.
 
 - `stopSound()`: Stops the currently playing sound in simultaneous mode.
 

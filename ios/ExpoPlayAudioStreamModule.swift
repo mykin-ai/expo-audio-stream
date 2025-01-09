@@ -161,13 +161,18 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             promise.resolve(result)
         }
         
-        AsyncFunction("playSound") { (base64Chunk: String, turnId: String, skipPlaybackEvent: Bool, promise: Promise) in
+        AsyncFunction("playSound") { (base64Chunk: String, turnId: String, promise: Promise) in
             Logger.debug("Play sound")
             do {
                 if !inittedAudioSession {
                     try ensureInittedAudioSession()
                 }
-                try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, skipPlaybackEvent: skipPlaybackEvent, resolver: {
+                // Ensure voice processing is enabled to maintain louder volume levels
+                // Without voice processing enabled, audio in .playAndRecord mode is quiet
+                if !microphone.isVoiceProcessingEnabled {
+                    microphone.setupVoiceProcessing()
+                }
+                try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, resolver: {
                     _ in promise.resolve(nil)
                 }, rejecter: {code, message, error in
                     promise.reject(code ?? "ERR_UNKNOWN", message ?? "Unknown error")
@@ -175,6 +180,19 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             } catch {
                 print("Error enqueuing audio: \(error.localizedDescription)")
             }
+        }
+        
+        AsyncFunction("playWav") { (base64Chunk: String, promise: Promise) in
+            if !inittedAudioSession {
+                do {
+                    try ensureInittedAudioSession()
+                } catch {
+                    print("Failed to init audio session \(error.localizedDescription)")
+                    return
+                }
+            }
+            soundPlayer.playWav(base64Wav: base64Chunk)
+            promise.resolve(nil)
         }
         
         AsyncFunction("stopSound") { (promise: Promise) in
