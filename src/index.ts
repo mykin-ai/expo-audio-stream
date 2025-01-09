@@ -149,9 +149,9 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<void>}
    * @throws {Error} If the sound fails to play.
    */
-  static async playSound(audio: string, turnId: string): Promise<void> {
+  static async playSound(audio: string, turnId: string, skipPlaybackEvent: boolean = false): Promise<void> {
     try {
-      await ExpoPlayAudioStreamModule.playSound(audio, turnId);
+      await ExpoPlayAudioStreamModule.playSound(audio, turnId, skipPlaybackEvent);
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to enqueue audio: ${error}`);

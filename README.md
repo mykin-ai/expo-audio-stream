@@ -65,7 +65,9 @@ const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (even
 // audioSubscription.remove();
 ```
 
-### Simultaneous Recording and Playback (⚠️ IOS only for now)
+### Simultaneous Recording and Playback (⚠️ iOS only)
+
+These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
 
 ```javascript
 import { ExpoPlayAudioStream } from 'expo-audio-stream';
@@ -85,7 +87,11 @@ async function handleSimultaneousRecordAndPlay() {
 
     // Play audio while recording is active
     const turnId = 'response-turn-1';
+    // Play with default behavior (emitting playback events)
     await ExpoPlayAudioStream.playSound(someAudioBase64, turnId);
+    
+    // Or play without emitting playback events
+    await ExpoPlayAudioStream.playSound(someAudioBase64, turnId, true);
 
     // Example of controlling playback during recording
     setTimeout(async () => {
@@ -128,21 +134,34 @@ The Expo Play Audio Stream module provides the following methods:
 
 - `clearPlaybackQueueByTurnId(turnId: string)`: Clears the playback queue for a specific turn ID.
 
-- `subscribeToAudioEvents(onMicrophoneStream: (event: AudioDataEvent) => Promise<void>)`: Subscribe to recording events from anywhere in your application. Returns a subscription that should be cleaned up when no longer needed.
+- `subscribeToAudioEvents(onMicrophoneStream: (event: AudioDataEvent) => Promise<void>)`: Subscribe to recording events from anywhere in your application. The callback receives an AudioDataEvent containing:
+  - `data`: Base64 encoded audio data at original sample rate
+  - `data16kHz`: Optional base64 encoded audio data resampled to 16kHz
+  - `position`: Current position in the audio stream
+  - `fileUri`: URI of the recording file
+  - `eventDataSize`: Size of the current audio data chunk
+  - `totalSize`: Total size of recorded audio so far
+  Returns a subscription that should be cleaned up when no longer needed.
 
-### Simultaneous Recording and Playback
+### Simultaneous Recording and Playback (⚠️ iOS only)
 
-These methods are specifically designed for scenarios where you need to record and play audio at the same time:
+These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
 
-- `startMicrophone(recordingConfig: RecordingConfig)`: Starts microphone streaming with voice processing enabled. Returns a promise with recording result and audio event subscription.
+- `startMicrophone(recordingConfig: RecordingConfig)`: Starts microphone streaming with voice processing enabled. Returns a promise with recording result and audio event subscription. The recording config can include:
+  - `onAudioStream`: Callback function for receiving audio stream data
+  - Additional recording options like sample rate, channels, etc.
 
 - `stopMicrophone()`: Stops the microphone streaming when in simultaneous mode.
 
-- `playSound(audio: string, turnId: string)`: Plays a sound while recording is active. Uses voice processing to prevent feedback.
+- `playSound(audio: string, turnId: string, skipPlaybackEvent?: boolean)`: Plays a sound while recording is active. Uses voice processing to prevent feedback. The optional `skipPlaybackEvent` parameter (defaults to false) allows you to control whether playback completion events are emitted.
+
+- `stopSound()`: Stops the currently playing sound in simultaneous mode.
 
 - `interruptSound()`: Interrupts the current sound playback in simultaneous mode.
 
 - `resumeSound()`: Resumes the current sound playback in simultaneous mode.
+
+- `subscribeToSoundChunkPlayed(onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>)`: Subscribe to events emitted when a sound chunk has finished playing. The callback receives a payload indicating if this was the final chunk. Returns a subscription that should be cleaned up when no longer needed.
 
 All methods are static and most return Promises that resolve when the operation is complete. Error handling is built into each method, with descriptive error messages if operations fail.
 

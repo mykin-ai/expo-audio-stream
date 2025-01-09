@@ -66,7 +66,7 @@ export default function App() {
       </View>
       <Button
         onPress={async () => {
-          await ExpoPlayAudioStream.playSound(sampleA, turnId2);
+          await ExpoPlayAudioStream.playSound(sampleA, turnId2, false);
         }}
         title="Play sample A"
       />

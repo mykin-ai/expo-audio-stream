@@ -154,6 +154,7 @@ class SoundPlayer {
     public func play(
         audioChunk base64String: String,
         turnId strTurnId: String,
+        skipPlaybackEvent: Bool = false,
         resolver: @escaping RCTPromiseResolveBlock,
         rejecter: @escaping RCTPromiseRejectBlock
     ) throws {
@@ -181,15 +182,15 @@ class SoundPlayer {
             self.segmentsLeftToPlay += 1
             print("New Chunk \(isPlaying)")
             // If not already playing, start playback
-            playNextInQueue()
+            playNextInQueue(skipPlaybackEvent: skipPlaybackEvent)
         } catch {
             Logger.debug("[SoundPlayer] Failed to enqueue audio chunk: \(error.localizedDescription)")
             rejecter("ERROR_SOUND_PLAYER", "Failed to enqueue audio chunk: \(error.localizedDescription)", nil)
         }
     }
     
-    /// Plays the next audio chunk in the queue if available
-    private func playNextInQueue() {
+    
+    private func playNextInQueue(skipPlaybackEvent: Bool = false) {
         guard !audioQueue.isEmpty else {
             return
         }
@@ -211,12 +212,15 @@ class SoundPlayer {
                 self.audioPlayerNode.scheduleBuffer(buffer) {
                     self.segmentsLeftToPlay -= 1
                     let isFinalSegment = self.segmentsLeftToPlay == 0
-                    self.delegate?.onSoundChunkPlayed(isFinalSegment)
+                    
+                    if !skipPlaybackEvent {
+                        self.delegate?.onSoundChunkPlayed(isFinalSegment)
+                    }
                     promise(nil)
                     
 
                     if !self.isInterrupted && !self.audioQueue.isEmpty {
-                        self.playNextInQueue()
+                        self.playNextInQueue(skipPlaybackEvent: skipPlaybackEvent)
                     }
                 }
             }

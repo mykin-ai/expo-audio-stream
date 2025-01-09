@@ -161,13 +161,13 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             promise.resolve(result)
         }
         
-        AsyncFunction("playSound") { (base64Chunk: String, turnId: String, promise: Promise) in
+        AsyncFunction("playSound") { (base64Chunk: String, turnId: String, skipPlaybackEvent: Bool, promise: Promise) in
             Logger.debug("Play sound")
             do {
                 if !inittedAudioSession {
                     try ensureInittedAudioSession()
                 }
-                try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, resolver: {
+                try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, skipPlaybackEvent: skipPlaybackEvent, resolver: {
                     _ in promise.resolve(nil)
                 }, rejecter: {code, message, error in
                     promise.reject(code ?? "ERR_UNKNOWN", message ?? "Unknown error")
