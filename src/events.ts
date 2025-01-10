@@ -13,7 +13,6 @@ emitter.addListener('SoundChunkPlayed', (event: SoundChunkPlayedEventPayload) =>
 
 export interface AudioEventPayload {
     encoded?: string
-    encoded16kHz?: string
     buffer?: Float32Array
     fileUri: string
     lastEmittedSize: number

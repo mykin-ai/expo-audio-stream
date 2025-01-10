@@ -32,7 +32,6 @@ export class ExpoPlayAudioStream {
           totalSize,
           position,
           encoded,
-          encoded16kHz,
         } = event;
         if (!encoded) {
           console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
@@ -40,7 +39,6 @@ export class ExpoPlayAudioStream {
         }
         onAudioStream?.({
           data: encoded,
-          data16kHz: encoded16kHz,
           position,
           fileUri,
           eventDataSize: deltaSize,
@@ -218,7 +216,6 @@ export class ExpoPlayAudioStream {
               totalSize,
               position,
               encoded,
-              encoded16kHz,
             } = event;
             if (!encoded) {
               console.error(
@@ -228,7 +225,6 @@ export class ExpoPlayAudioStream {
             }
             onAudioStream?.({
               data: encoded,
-              data16kHz: encoded16kHz,
               position,
               fileUri,
               eventDataSize: deltaSize,
@@ -279,7 +275,7 @@ export class ExpoPlayAudioStream {
     onMicrophoneStream: (event: AudioDataEvent) => Promise<void>
   ): Subscription {
     return addAudioEventListener(async (event: AudioEventPayload) => {
-      const { fileUri, deltaSize, totalSize, position, encoded, encoded16kHz } =
+      const { fileUri, deltaSize, totalSize, position, encoded } =
         event;
       if (!encoded) {
         console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
@@ -287,7 +283,6 @@ export class ExpoPlayAudioStream {
       }
       onMicrophoneStream?.({
         data: encoded,
-        data16kHz: encoded16kHz,
         position,
         fileUri,
         eventDataSize: deltaSize,

@@ -266,7 +266,6 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
     private func ensureInittedAudioSession() throws {
         if self.inittedAudioSession { return }
 
-        self.promptForMicrophoneModes()
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(
             .playAndRecord, mode: .voiceChat,
@@ -275,7 +274,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         inittedAudioSession = true
      }
     
-    
+    // used for voice isolation, experimental
     private func promptForMicrophoneModes() {
         guard #available(iOS 15.0, *) else {
             return
@@ -378,16 +377,14 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         }
     }
     
-    func onMicrophoneData(_ microphoneData: Data, _ microphoneData16kHz: Data) {
+    func onMicrophoneData(_ microphoneData: Data) {
         let encodedData = microphoneData.base64EncodedString()
-        let encodedData16kHz = microphoneData16kHz.base64EncodedString()
         // Construct the event payload similar to Android
         let eventBody: [String: Any] = [
             "fileUri": "",
             "lastEmittedSize": 0,
             "position": 0, // Add position of the chunk in ms since
             "encoded": encodedData,
-            "encoded16kHz": encodedData16kHz,
             "deltaSize": 0,
             "totalSize": 0,
             "mimeType": ""
