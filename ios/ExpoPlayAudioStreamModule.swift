@@ -207,6 +207,14 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             soundPlayer.resume()
         }
         
+        AsyncFunction("clearSoundQueueByTurnId") { (turnId: String, promise: Promise) in
+            do {
+                soundPlayer.clearSoundQueue(turnIdToClear: turnId, resolver: promise)
+            } catch {
+                promise.reject("ERROR_SOUND_QUEUE_CLEAR", "Failed to clear sound queue")
+            }
+        }
+        
         AsyncFunction("startMicrophone") { (options: [String: Any], promise: Promise) in
             
             if !inittedAudioSession {
