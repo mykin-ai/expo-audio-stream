@@ -26,7 +26,6 @@ async function handleStandardRecording() {
       onAudioStream: (event) => {
         console.log('Received audio stream:', {
           audioDataBase64: event.data,
-          audioData16kHzBase64: event.data16kHz, // usually used for voice activity detection like silero models
           position: event.position,
           eventDataSize: event.eventDataSize,
           totalSize: event.totalSize
@@ -58,7 +57,6 @@ async function handleStandardRecording() {
 const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (event) => {
   console.log('Audio event received:', {
     data: event.data,
-    data16kHz: event.data16kHz
   });
 });
 // Don't forget to clean up when done
@@ -80,7 +78,6 @@ async function handleSimultaneousRecordAndPlay() {
       onAudioStream: (event) => {
         console.log('Received audio stream with voice processing:', {
           audioDataBase64: event.data,
-          audioData16kHz: event.data16kHz
         });
       }
     });
@@ -89,8 +86,14 @@ async function handleSimultaneousRecordAndPlay() {
     const turnId = 'response-turn-1';
     await ExpoPlayAudioStream.playSound(someAudioBase64, turnId);
 
+    // Play a complete WAV file directly
+    await ExpoPlayAudioStream.playWav(wavBase64Data);
+
     // Example of controlling playback during recording
     setTimeout(async () => {
+      // Clear the queue for a specific turn
+      await ExpoPlayAudioStream.clearSoundQueueByTurnId(turnId);
+
       // Interrupt current playback
       await ExpoPlayAudioStream.interruptSound();
       
@@ -132,7 +135,6 @@ The Expo Play Audio Stream module provides the following methods:
 
 - `subscribeToAudioEvents(onMicrophoneStream: (event: AudioDataEvent) => Promise<void>)`: Subscribe to recording events from anywhere in your application. The callback receives an AudioDataEvent containing:
   - `data`: Base64 encoded audio data at original sample rate
-  - `data16kHz`: Optional base64 encoded audio data resampled to 16kHz
   - `position`: Current position in the audio stream
   - `fileUri`: URI of the recording file
   - `eventDataSize`: Size of the current audio data chunk
@@ -151,9 +153,11 @@ These methods are specifically designed for scenarios where you need to record a
 
 - `playSound(audio: string, turnId: string)`: Plays a sound while recording is active. Uses voice processing to prevent feedback.
 
-- `playWav(base64Wav: string)`: Plays a WAV format audio directly. Useful for playing complete WAV files without chunking. The audio data should be base64 encoded WAV format.
+- `playWav(base64Wav: string)`: Plays a WAV format audio directly. Unlike playSound(), this method plays the audio directly without queueing. The audio data should be base64 encoded WAV format.
 
 - `stopSound()`: Stops the currently playing sound in simultaneous mode.
+
+- `clearSoundQueueByTurnId(turnId: string)`: Clears the sound queue for a specific turn ID in simultaneous mode.
 
 - `interruptSound()`: Interrupts the current sound playback in simultaneous mode.
 

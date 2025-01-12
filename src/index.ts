@@ -156,6 +156,11 @@ export class ExpoPlayAudioStream {
     }
   }
 
+  /**
+   * Stops the currently playing sound.
+   * @returns {Promise<void>}
+   * @throws {Error} If the sound fails to stop.
+   */
   static async stopSound(): Promise<void> {
     try {
       await ExpoPlayAudioStreamModule.stopSound();
@@ -190,6 +195,21 @@ export class ExpoPlayAudioStream {
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to resume sound: ${error}`);
+    }
+  }
+
+  /**
+   * Clears the sound queue by turn ID.
+   * @param {string} turnId - The turn ID.
+   * @returns {Promise<void>}
+   * @throws {Error} If the sound queue fails to clear.
+   */
+  static async clearSoundQueueByTurnId(turnId: string): Promise<void> {
+    try {
+      await ExpoPlayAudioStreamModule.clearSoundQueueByTurnId(turnId);
+    } catch (error) {
+      console.error(error);
+      throw new Error(`Failed to clear sound queue: ${error}`);
     }
   }
 
