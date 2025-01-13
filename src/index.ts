@@ -10,6 +10,16 @@ import {
 import { addAudioEventListener, addSoundChunkPlayedListener, AudioEventPayload, SoundChunkPlayedEventPayload } from "./events";
 
 export class ExpoPlayAudioStream {
+
+  /**
+   * Destroys the audio stream module, cleaning up all resources.
+   * This should be called when the module is no longer needed.
+   * It will reset all internal state and release audio resources.
+   */
+  static destroy() {
+    ExpoPlayAudioStreamModule.destroy();
+  }
+
   /**
    * Starts microphone recording.
    * @param {RecordingConfig} recordingConfig - Configuration for the recording.

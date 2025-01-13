@@ -6,26 +6,42 @@ let audioDataEvent: String = "AudioData"
 let soundIsPlayedEvent: String = "SoundChunkPlayed"
 
 public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate, SoundPlayerDelegate {
-    private lazy var audioController: AudioController = AudioController()
+    private var _audioController: AudioController?
+    private var _audioSessionManager: AudioSessionManager?
+    private var _microphone: Microphone?
+    private var _soundPlayer: SoundPlayer?
     
-    private lazy var audioSessionManager: AudioSessionManager = {
-        let audioSessionManager = AudioSessionManager()
-        audioSessionManager.delegate = self
-        return audioSessionManager
-    }()
+    private var audioController: AudioController {
+        if _audioController == nil {
+            _audioController = AudioController()
+        }
+        return _audioController!
+    }
     
-    private lazy var microphone: Microphone = {
-        let microphone = Microphone()
-        microphone.delegate = self
-        return microphone
-    }()
+    private var audioSessionManager: AudioSessionManager {
+        if _audioSessionManager == nil {
+            _audioSessionManager = AudioSessionManager()
+            _audioSessionManager?.delegate = self
+        }
+        return _audioSessionManager!
+    }
     
-    private lazy var soundPlayer: SoundPlayer = {
-        let soundPlayer = SoundPlayer()
-        soundPlayer.delegate = self
-        return soundPlayer
-    }()
-   
+    private var microphone: Microphone {
+        if _microphone == nil {
+            _microphone = Microphone()
+            _microphone?.delegate = self
+        }
+        return _microphone!
+    }
+    
+    private var soundPlayer: SoundPlayer {
+        if _soundPlayer == nil {
+            _soundPlayer = SoundPlayer()
+            _soundPlayer?.delegate = self
+        }
+        return _soundPlayer!
+    }
+    
     private var inittedAudioSession: Bool = false
 
     public func definition() -> ModuleDefinition {
@@ -33,6 +49,15 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         
         // Defines event names that the module can send to JavaScript.
         Events([audioDataEvent, soundIsPlayedEvent])
+        
+        Function("destroy") {
+            // Now we can properly reset all instances
+            self._audioController = nil
+            self._audioSessionManager = nil
+            self._microphone = nil
+            self._soundPlayer = nil
+            self.inittedAudioSession = false
+        }
         
         /// Asynchronously starts audio recording with the given settings.
         ///
