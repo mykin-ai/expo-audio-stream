@@ -32,6 +32,12 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
             audioPlaybackManager.runOnDispose()
         }
 
+        Function("destroy") {
+            audioPlaybackManager.runOnDispose()
+            initializeManager()
+            initializePlaybackManager()
+        }
+
         AsyncFunction("startRecording") { options: Map<String, Any?>, promise: Promise ->
             audioRecorderManager.startRecording(options, promise)
         }
@@ -88,6 +94,36 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         AsyncFunction("listAudioFiles") { promise: Promise ->
             audioRecorderManager.listAudioFiles(promise)
         }
+
+        AsyncFunction("playSound") { chunk: String, turnId: String, promise: Promise ->
+            audioPlaybackManager.playAudio(chunk, turnId, promise)
+        }
+
+        AsyncFunction("playWav") { chunk: String, promise: Promise ->
+            audioPlaybackManager.playAudio(chunk, "", promise)
+        }
+
+        AsyncFunction("stopSound") { promise: Promise -> audioPlaybackManager.stopPlayback(promise) }
+
+        AsyncFunction("interruptSound") { promise: Promise -> audioPlaybackManager.stopPlayback(promise) }
+
+        Function("resumeSound") {
+            // not applicable for android
+        }
+
+        AsyncFunction("clearSoundQueueByTurnId") { turnId: String, promise: Promise ->
+            audioPlaybackManager.setCurrentTurnId(turnId)
+            promise.resolve(null)
+        }
+
+        AsyncFunction("startMicrophone") { options: Map<String, Any?>, promise: Promise ->
+            audioRecorderManager.startRecording(options, promise)
+        }
+
+        AsyncFunction("stopMicrophone") { promise: Promise ->
+            audioRecorderManager.stopRecording(promise)
+        }
+
     }
     private fun initializeManager() {
         val androidContext =
