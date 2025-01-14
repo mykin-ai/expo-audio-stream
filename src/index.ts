@@ -279,7 +279,7 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<void>}
    * @throws {Error} If the microphone streaming fails to stop.
    */
-  static async stopMicrophone(): Promise<void> {
+  static async stopMicrophone(): Promise<AudioRecording | null> {
     try {
       return await ExpoPlayAudioStreamModule.stopMicrophone();
     } catch (error) {
