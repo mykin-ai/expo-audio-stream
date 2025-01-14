@@ -33,6 +33,7 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         }
 
         Function("destroy") {
+            audioPlaybackManager.runOnDispose()
             initializeManager()
             initializePlaybackManager()
         }
