@@ -119,21 +119,41 @@ The Expo Play Audio Stream module provides the following methods:
 
 ### Standard Audio Operations
 
-- `startRecording(recordingConfig: RecordingConfig)`: Starts microphone recording with the specified configuration. Returns a promise with recording result and audio event subscription.
+- `destroy()`: Destroys the audio stream module, cleaning up all resources. This should be called when the module is no longer needed. It will reset all internal state and release audio resources.
 
-- `stopRecording()`: Stops the current microphone recording and returns the audio recording data.
+- `startRecording(recordingConfig: RecordingConfig)`: Starts microphone recording with the specified configuration. Returns a promise with recording result and audio event subscription. Throws an error if the recording fails to start.
 
-- `playAudio(base64Chunk: string, turnId: string)`: Plays a base64 encoded audio chunk with the specified turn ID.
+- `stopRecording()`: Stops the current microphone recording. Returns a promise that resolves to the audio recording data. Throws an error if the recording fails to stop.
 
-- `pauseAudio()`: Pauses the current audio playback.
+- `playAudio(base64Chunk: string, turnId: string)`: Plays a base64 encoded audio chunk with the specified turn ID. Throws an error if the audio chunk fails to stream.
 
-- `stopAudio()`: Stops the currently playing audio.
+- `pauseAudio()`: Pauses the current audio playback. Throws an error if the audio playback fails to pause.
 
-- `setVolume(volume: number)`: Sets the volume for audio playback (0.0 to 1.0).
+- `stopAudio()`: Stops the currently playing audio. Throws an error if the audio fails to stop.
 
-- `clearPlaybackQueueByTurnId(turnId: string)`: Clears the playback queue for a specific turn ID.
+- `clearPlaybackQueueByTurnId(turnId: string)`: Clears the playback queue for a specific turn ID. Throws an error if the playback queue fails to clear.
 
-- `subscribeToAudioEvents(onMicrophoneStream: (event: AudioDataEvent) => Promise<void>)`: Subscribe to recording events from anywhere in your application. The callback receives an AudioDataEvent containing:
+### Simultaneous Recording and Playback
+
+- `startMicrophone(recordingConfig: RecordingConfig)`: Starts microphone streaming. Returns a promise that resolves to an object containing the recording result and a subscription to audio events. Throws an error if the recording fails to start.
+
+- `stopMicrophone()`: Stops the current microphone streaming. Returns a promise that resolves to the audio recording data or null. Throws an error if the microphone streaming fails to stop.
+
+- `playSound(audio: string, turnId: string)`: Plays a sound. Throws an error if the sound fails to play.
+
+- `stopSound()`: Stops the currently playing sound. Throws an error if the sound fails to stop.
+
+- `interruptSound()`: Interrupts the current sound. Throws an error if the sound fails to interrupt.
+
+- `resumeSound()`: Resumes the current sound. Throws an error if the sound fails to resume.
+
+- `clearSoundQueueByTurnId(turnId: string)`: Clears the sound queue for a specific turn ID. Throws an error if the sound queue fails to clear.
+
+- `playWav(wavBase64: string)`: Plays a WAV format audio file from base64 encoded data. Unlike playSound(), this method plays the audio directly without queueing. Throws an error if the WAV audio fails to play.
+
+### Event Subscriptions
+
+- `subscribeToAudioEvents(onMicrophoneStream: (event: AudioDataEvent) => Promise<void>)`: Subscribes to audio events emitted during recording/streaming. The callback receives an AudioDataEvent containing:
   - `data`: Base64 encoded audio data at original sample rate
   - `position`: Current position in the audio stream
   - `fileUri`: URI of the recording file
@@ -141,29 +161,7 @@ The Expo Play Audio Stream module provides the following methods:
   - `totalSize`: Total size of recorded audio so far
   Returns a subscription that should be cleaned up when no longer needed.
 
-### Simultaneous Recording and Playback (⚠️ iOS only)
-
-These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
-
-- `startMicrophone(recordingConfig: RecordingConfig)`: Starts microphone streaming with voice processing enabled. Returns a promise with recording result and audio event subscription. The recording config can include:
-  - `onAudioStream`: Callback function for receiving audio stream data
-  - Additional recording options like sample rate, channels, etc.
-
-- `stopMicrophone()`: Stops the microphone streaming when in simultaneous mode.
-
-- `playSound(audio: string, turnId: string)`: Plays a sound while recording is active. Uses voice processing to prevent feedback.
-
-- `playWav(base64Wav: string)`: Plays a WAV format audio directly. Unlike playSound(), this method plays the audio directly without queueing. The audio data should be base64 encoded WAV format.
-
-- `stopSound()`: Stops the currently playing sound in simultaneous mode.
-
-- `clearSoundQueueByTurnId(turnId: string)`: Clears the sound queue for a specific turn ID in simultaneous mode.
-
-- `interruptSound()`: Interrupts the current sound playback in simultaneous mode.
-
-- `resumeSound()`: Resumes the current sound playback in simultaneous mode.
-
-- `subscribeToSoundChunkPlayed(onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>)`: Subscribe to events emitted when a sound chunk has finished playing. The callback receives a payload indicating if this was the final chunk. Returns a subscription that should be cleaned up when no longer needed.
+- `subscribeToSoundChunkPlayed(onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>)`: Subscribes to events emitted when a sound chunk has finished playing. The callback receives a payload indicating if this was the final chunk. Returns a subscription that should be cleaned up when no longer needed.
 
 All methods are static and most return Promises that resolve when the operation is complete. Error handling is built into each method, with descriptive error messages if operations fail.
 

@@ -127,20 +127,11 @@ export class ExpoPlayAudioStream {
   }
 
   /**
-   * Sets the volume for the audio playback.
-   * @param {number} volume - The volume to set (0.0 to 1.0).
+   * Clears the playback queue by turn ID.
+   * @param {string} turnId - The turn ID.
    * @returns {Promise<void>}
-   * @throws {Error} If the volume fails to set.
+   * @throws {Error} If the playback queue fails to clear.
    */
-  static async setVolume(volume: number): Promise<void> {
-    try {
-      return await ExpoPlayAudioStreamModule.setVolume(volume);
-    } catch (error) {
-      console.error(error);
-      throw new Error(`Failed to set volume: ${error}`);
-    }
-  }
-
   static async clearPlaybackQueueByTurnId(turnId: string): Promise<void> {
     try {
       await ExpoPlayAudioStreamModule.clearPlaybackQueueByTurnId(turnId);
