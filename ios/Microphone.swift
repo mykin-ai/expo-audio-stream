@@ -14,7 +14,6 @@ class Microphone {
     private var audioEngine: AVAudioEngine!
     private var audioConverter: AVAudioConverter!
     private var inputNode: AVAudioInputNode!
-    private var audioPlayerNode: AVAudioPlayerNode = AVAudioPlayerNode()
     
     public private(set) var isVoiceProcessingEnabled: Bool = false
     
@@ -23,8 +22,6 @@ class Microphone {
     internal var lastEmittedSize: Int64 = 0
     private var emissionInterval: TimeInterval = 1.0 // Default to 1 second
     private var totalDataSize: Int64 = 0
-    private var isPaused = false
-    private var pausedDuration = 0
     internal var recordingSettings: RecordingSettings?
     
     internal var mimeType: String = "audio/wav"
@@ -37,29 +34,6 @@ class Microphone {
 
     private var inittedAudioSession = false
     private var isRecording: Bool = false
-    
-    public func setupVoiceProcessing() {
-        self.isVoiceProcessingEnabled = true
-        audioEngine = AVAudioEngine()
-        
-        do {
-            let outputNode: AVAudioOutputNode = audioEngine.outputNode
-            self.inputNode = audioEngine.inputNode
-            let mainMixerNode: AVAudioMixerNode = audioEngine.mainMixerNode
-            audioEngine.connect(mainMixerNode, to: outputNode, format: nil)
-            
-            // This step, importantly, tells iOS to enable "voice processing" i.e. noise reduction / echo cancellation
-            // to optimize the audio input for voice processing. Note that this is simply a
-            // *request* to the operating system to enable these features, and there is no guarantee
-            // that they will be supported in all environments.
-            // Notably, echo cancellation doesn't seem to work in the iOS simulator.
-            try self.inputNode.setVoiceProcessingEnabled(true)
-            try outputNode.setVoiceProcessingEnabled(true)
-        } catch {
-            print("Error setting voice processing: \(error)")
-            return
-        }
-    }
     
     private func ensureInittedAudioSession() throws {
          if self.inittedAudioSession { return }
@@ -78,63 +52,43 @@ class Microphone {
             return StartRecordingResult(error: "Recording is already in progress.")
         }
         
+        if self.audioEngine == nil {
+            self.audioEngine = AVAudioEngine()
+        }
+        
         if self.audioEngine != nil && audioEngine.isRunning  {
             Logger.debug("Debug: Audio engine already running.")
             audioEngine.stop()
         }
-        
-        setupVoiceProcessing()
        
         var newSettings = settings  // Make settings mutable
         
         // Determine the commonFormat based on bitDepth
-        let commonFormat: AVAudioCommonFormat
-        switch newSettings.bitDepth {
-        case 16:
-            commonFormat = .pcmFormatInt16
-        case 32:
-            commonFormat = .pcmFormatInt32
-        default:
-            Logger.debug("Unsupported bit depth. Defaulting to 16-bit PCM")
-            commonFormat = .pcmFormatInt16
-            newSettings.bitDepth = 16
-        }
+        let commonFormat: AVAudioCommonFormat = AudioUtils.getCommonFormat(depth: newSettings.bitDepth)
         
         emissionInterval = max(100.0, Double(intervalMilliseconds)) / 1000.0
         lastEmissionTime = Date()
         accumulatedData.removeAll()
         totalDataSize = 0
-        pausedDuration = 0
-        isPaused = false
         
-        do {
-            let session = AVAudioSession.sharedInstance()
-            Logger.debug("Debug: Configuring audio session with sample rate: \(settings.sampleRate) Hz")
-            
-            // Check if the input node supports the desired format
-            let inputNode = audioEngine.inputNode
-            let hardwareFormat = inputNode.inputFormat(forBus: 0)
-            if hardwareFormat.sampleRate != newSettings.sampleRate {
-                Logger.debug("Debug: Preferred sample rate not supported. Falling back to hardware sample rate \(session.sampleRate).")
-                newSettings.sampleRate = session.sampleRate
-            }
-            
-            try session.setPreferredSampleRate(settings.sampleRate)
-            try session.setPreferredIOBufferDuration(1024 / settings.sampleRate)
-            try session.setActive(true)
-            
-            let actualSampleRate = session.sampleRate
-            if actualSampleRate != newSettings.sampleRate {
-                Logger.debug("Debug: Preferred sample rate not set. Falling back to hardware sample rate: \(actualSampleRate) Hz")
-                newSettings.sampleRate = actualSampleRate
-            }
-            Logger.debug("Debug: Audio session is successfully configured. Actual sample rate is \(actualSampleRate) Hz")
-            
-            recordingSettings = newSettings  // Update the class property with the new settings
-        } catch {
-            Logger.debug("Error: Failed to set up audio session with preferred settings: \(error.localizedDescription)")
-            return StartRecordingResult(error: "Error: Failed to set up audio session with preferred settings: \(error.localizedDescription)")
+        let session = AVAudioSession.sharedInstance()
+        Logger.debug("Debug: Configuring audio session with sample rate: \(settings.sampleRate) Hz")
+        
+        // Check if the input node supports the desired format
+        let hardwareFormat = audioEngine.inputNode.inputFormat(forBus: 0)
+        if hardwareFormat.sampleRate != newSettings.sampleRate {
+            Logger.debug("Debug: Preferred sample rate not supported. Falling back to hardware sample rate \(session.sampleRate).")
+            newSettings.sampleRate = session.sampleRate
         }
+        
+        let actualSampleRate = session.sampleRate
+        if actualSampleRate != newSettings.sampleRate {
+            Logger.debug("Debug: Preferred sample rate not set. Falling back to hardware sample rate: \(actualSampleRate) Hz")
+            newSettings.sampleRate = actualSampleRate
+        }
+        Logger.debug("Debug: Audio session is successfully configured. Actual sample rate is \(actualSampleRate) Hz")
+        
+        recordingSettings = newSettings  // Update the class property with the new settings
         
         // Correct the format to use 16-bit integer (PCM)
         guard let audioFormat = AVAudioFormat(commonFormat: commonFormat, sampleRate: newSettings.sampleRate, channels: UInt32(newSettings.numberOfChannels), interleaved: true) else {
@@ -148,7 +102,6 @@ class Microphone {
                 return
             }
             
-            // Processing the current buffer
             self.processAudioBuffer(buffer)
             self.lastBufferTime = time
         }
@@ -177,80 +130,8 @@ class Microphone {
         self.isRecording = false
         self.isVoiceProcessingEnabled = false
         audioEngine.stop()
-        self.inputNode.removeTap(onBus: 0)
+        audioEngine.inputNode.removeTap(onBus: 0)
     }
-
-    
-    /// Resamples the audio buffer using vDSP. If it fails, falls back to manual resampling.
-    /// - Parameters:
-    ///   - buffer: The original audio buffer to be resampled.
-    ///   - originalSampleRate: The sample rate of the original audio buffer.
-    ///   - targetSampleRate: The desired sample rate to resample to.
-    /// - Returns: A new audio buffer resampled to the target sample rate, or nil if resampling fails.
-    private func resampleAudioBuffer(_ buffer: AVAudioPCMBuffer, from originalSampleRate: Double, to targetSampleRate: Double) -> AVAudioPCMBuffer? {
-        guard let channelData = buffer.floatChannelData else { return nil }
-        
-        let sourceFrameCount = Int(buffer.frameLength)
-        let sourceChannels = Int(buffer.format.channelCount)
-        
-        // Calculate the number of frames in the target buffer
-        let targetFrameCount = Int(Double(sourceFrameCount) * targetSampleRate / originalSampleRate)
-        
-        // Create a new audio buffer for the resampled data
-        guard let targetBuffer = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(targetFrameCount)) else { return nil }
-        targetBuffer.frameLength = AVAudioFrameCount(targetFrameCount)
-        
-        let resamplingFactor = Float(targetSampleRate / originalSampleRate) // Factor to resample the audio
-        
-        for channel in 0..<sourceChannels {
-            let input = UnsafeBufferPointer(start: channelData[channel], count: sourceFrameCount) // Original channel data
-            let output = UnsafeMutableBufferPointer(start: targetBuffer.floatChannelData![channel], count: targetFrameCount) // Buffer for resampled data
-            
-            var y: [Float] = Array(repeating: 0, count: targetFrameCount) // Temporary array for resampled data
-            
-            // Resample using vDSP_vgenp which performs interpolation
-            vDSP_vgenp(input.baseAddress!, vDSP_Stride(1), [Float](stride(from: 0, to: Float(sourceFrameCount), by: resamplingFactor)), vDSP_Stride(1), &y, vDSP_Stride(1), vDSP_Length(targetFrameCount), vDSP_Length(sourceFrameCount))
-            
-            for i in 0..<targetFrameCount {
-                output[i] = y[i]
-            }
-        }
-        return targetBuffer
-    }
-    
-    
-    private func tryConvertToFormat(inputBuffer buffer: AVAudioPCMBuffer, desiredSampleRate sampleRate: Double, desiredChannel channels: AVAudioChannelCount) -> AVAudioPCMBuffer? {
-        var error: NSError? = nil
-        var commonFormat: AVAudioCommonFormat = .pcmFormatInt16
-        switch recordingSettings?.bitDepth {
-        case 16:
-            commonFormat = .pcmFormatInt16
-        case 32:
-            commonFormat = .pcmFormatInt32
-        default:
-            Logger.debug("Unsupported bit depth. Defaulting to 16-bit PCM")
-            commonFormat = .pcmFormatInt16
-        }
-        guard let nativeInputFormat = AVAudioFormat(commonFormat: commonFormat, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: true) else {
-            Logger.debug("AudioSessionManager: Failed to convert to desired format. AudioFormat is corrupted.")
-            return nil
-        }
-        let desiredFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: channels, interleaved: false)!
-        let inputAudioConverter = AVAudioConverter(from: nativeInputFormat, to: desiredFormat)!
-        
-        let convertedBuffer = AVAudioPCMBuffer(pcmFormat: desiredFormat, frameCapacity: 1024)!
-        let status = inputAudioConverter.convert(to: convertedBuffer, error: &error, withInputFrom: {inNumPackets, outStatus in
-           outStatus.pointee = .haveData
-           buffer.frameLength = inNumPackets
-           return buffer
-        })
-        if status == .haveData {
-            return convertedBuffer
-        }
-        return nil
-    }
-    
-    
     
     /// Processes the audio buffer and writes data to the file. Also handles audio processing if enabled.
     /// - Parameters:
@@ -262,12 +143,17 @@ class Microphone {
         
         if buffer.format.sampleRate != targetSampleRate {
             // Resample the audio buffer if the target sample rate is different from the input sample rate
-            if let resampledBuffer = resampleAudioBuffer(buffer, from: buffer.format.sampleRate, to: targetSampleRate) {
+            if let resampledBuffer = AudioUtils.resampleAudioBuffer(buffer, from: buffer.format.sampleRate, to: targetSampleRate) {
                 finalBuffer = resampledBuffer
             } else {
                 Logger.debug("Fallback to AVAudioConverter. Converting from \(buffer.format.sampleRate) Hz to \(targetSampleRate) Hz")
                 
-                if let convertedBuffer = self.tryConvertToFormat(inputBuffer: buffer, desiredSampleRate: targetSampleRate, desiredChannel: 1) {
+                if let convertedBuffer = AudioUtils.tryConvertToFormat(
+                    inputBuffer: buffer,
+                    desiredSampleRate: targetSampleRate,
+                    desiredChannel: 1,
+                    bitDepth: recordingSettings?.bitDepth ?? 16
+                ) {
                     finalBuffer = convertedBuffer
                 } else {
                     Logger.debug("Failed to convert to desired format.")

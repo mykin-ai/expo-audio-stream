@@ -6,17 +6,9 @@ let audioDataEvent: String = "AudioData"
 let soundIsPlayedEvent: String = "SoundChunkPlayed"
 
 public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate, SoundPlayerDelegate {
-    private var _audioController: AudioController?
     private var _audioSessionManager: AudioSessionManager?
     private var _microphone: Microphone?
     private var _soundPlayer: SoundPlayer?
-    
-    private var audioController: AudioController {
-        if _audioController == nil {
-            _audioController = AudioController()
-        }
-        return _audioController!
-    }
     
     private var audioSessionManager: AudioSessionManager {
         if _audioSessionManager == nil {
@@ -47,12 +39,15 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
     public func definition() -> ModuleDefinition {
         Name("ExpoPlayAudioStream")
         
+        OnCreate() {
+            promptForMicrophoneModes()
+        }
+        
         // Defines event names that the module can send to JavaScript.
         Events([audioDataEvent, soundIsPlayedEvent])
         
         Function("destroy") {
             // Now we can properly reset all instances
-            self._audioController = nil
             self._audioSessionManager = nil
             self._microphone = nil
             self._soundPlayer = nil
@@ -164,14 +159,6 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             })
         }
 
-        AsyncFunction("setVolume") { (volume: Float, promise: Promise) in
-            audioController.setVolume(volume, resolver: { _ in
-                promise.resolve(nil)
-            }, rejecter: { code, message, error in
-                promise.reject(code ?? "ERR_VOLUME_ERROR", message ?? "Error setting volume")
-            })
-        }
-
         AsyncFunction("pauseAudio") { (promise: Promise) in
             audioSessionManager.pauseAudio(promise: promise)
         }
@@ -192,11 +179,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
                 if !inittedAudioSession {
                     try ensureInittedAudioSession()
                 }
-                // Ensure voice processing is enabled to maintain louder volume levels
-                // Without voice processing enabled, audio in .playAndRecord mode is quiet
-                if !microphone.isVoiceProcessingEnabled {
-                    microphone.setupVoiceProcessing()
-                }
+        
                 try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, resolver: {
                     _ in promise.resolve(nil)
                 }, rejecter: {code, message, error in
@@ -233,31 +216,17 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         }
         
         AsyncFunction("clearSoundQueueByTurnId") { (turnId: String, promise: Promise) in
-            do {
-                soundPlayer.clearSoundQueue(turnIdToClear: turnId, resolver: promise)
-            } catch {
-                promise.reject("ERROR_SOUND_QUEUE_CLEAR", "Failed to clear sound queue")
-            }
+            soundPlayer.clearSoundQueue(turnIdToClear: turnId, resolver: promise)
         }
         
         AsyncFunction("startMicrophone") { (options: [String: Any], promise: Promise) in
-            
-            if !inittedAudioSession {
-                do {
-                    try ensureInittedAudioSession()
-                } catch {
-                    promise.reject("ERROR", "Failed to init audio session \(error.localizedDescription)")
-                    return
-                }
-            }
+            // Create recording settings
             // Extract settings from provided options, using default values if necessary
             let sampleRate = options["sampleRate"] as? Double ?? 16000.0 // it fails if not 48000, why?
             let numberOfChannels = options["channelConfig"] as? Int ?? 1 // Mono channel configuration
             let bitDepth = options["audioFormat"] as? Int ?? 16 // 16bits
             let interval = options["interval"] as? Int ?? 1000
             
-            
-            // Create recording settings
             let settings = RecordingSettings(
                 sampleRate: sampleRate,
                 desiredSampleRate: sampleRate,
@@ -266,6 +235,16 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
                 maxRecentDataDuration: nil,
                 pointsPerSecond: nil
             )
+            
+            if !inittedAudioSession {
+                do {
+                    try ensureInittedAudioSession(settings: settings)
+                } catch {
+                    promise.reject("ERROR", "Failed to init audio session \(error.localizedDescription)")
+                    return
+                }
+            }
+            
             
             if let result = self.microphone.startRecording(settings: settings, intervalMilliseconds: interval) {
                 if let resError = result.error {
@@ -296,13 +275,17 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         }
     }
     
-    private func ensureInittedAudioSession() throws {
+    private func ensureInittedAudioSession(settings recordingSettings: RecordingSettings? = nil) throws {
         if self.inittedAudioSession { return }
 
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(
             .playAndRecord, mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
+            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
+        if let settings = recordingSettings {
+            try audioSession.setPreferredSampleRate(settings.sampleRate)
+            try audioSession.setPreferredIOBufferDuration(1024 / settings.sampleRate)
+        }
         try audioSession.setActive(true)
         inittedAudioSession = true
      }
@@ -310,6 +293,10 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
     // used for voice isolation, experimental
     private func promptForMicrophoneModes() {
         guard #available(iOS 15.0, *) else {
+            return
+        }
+        
+        if AVCaptureDevice.preferredMicrophoneMode == .voiceIsolation {
             return
         }
         

@@ -4,13 +4,9 @@ import ExpoModulesCore
 class SoundPlayer {
     weak var delegate: SoundPlayerDelegate?
     private var audioEngine: AVAudioEngine!
-
-    private var inputNode: AVAudioInputNode!
     private var audioPlayerNode: AVAudioPlayerNode!
     
     private var audioPlayer: AVAudioPlayer?
-    
-    private var isVoiceProcessingEnabled: Bool = false
     
     private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue")
     
@@ -94,6 +90,10 @@ class SoundPlayer {
         if let playerNode = self.audioPlayerNode {
             audioEngine.attach(playerNode)
             audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: self.audioPlaybackFormat)
+            audioEngine.connect(audioEngine.mainMixerNode, to: audioEngine.outputNode, format: self.audioPlaybackFormat)
+            
+            try audioEngine.inputNode.setVoiceProcessingEnabled(true)
+            try audioEngine.outputNode.setVoiceProcessingEnabled(true)
         }
         self.isAudioEngineIsSetup = true
         
@@ -128,8 +128,6 @@ class SoundPlayer {
             self.audioPlayerNode.stop()
             
             self.segmentsLeftToPlay = 0
-            
-            self.isPlaying = false
         } else {
             Logger.debug("Player is not playing")
         }
@@ -201,7 +199,6 @@ class SoundPlayer {
             let bufferTuple = (buffer: pcmBuffer, promise: resolver, turnId: strTurnId)
             audioQueue.append(bufferTuple)
             self.segmentsLeftToPlay += 1
-            print("New Chunk \(isPlaying)")
             // If not already playing, start playback
             playNextInQueue()
         } catch {
@@ -215,10 +212,7 @@ class SoundPlayer {
         guard !audioQueue.isEmpty else {
             return
         }
-        guard !isPlaying else {
-            return
-        }
-        
+                
         Logger.debug("[SoundPlayer] Playing audio [ \(audioQueue.count)]")
           
             
