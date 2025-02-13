@@ -63,7 +63,7 @@ const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (even
 // audioSubscription.remove();
 ```
 
-### Simultaneous Recording and Playback (⚠️ iOS only)
+### Simultaneous Recording and Playback ⚠️ (iOS only)
 
 These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
 
@@ -133,23 +133,25 @@ The Expo Play Audio Stream module provides the following methods:
 
 - `clearPlaybackQueueByTurnId(turnId: string)`: Clears the playback queue for a specific turn ID. Throws an error if the playback queue fails to clear.
 
-### Simultaneous Recording and Playback
+### Simultaneous Recording and Playback ⚠️ (iOS only)
 
-- `startMicrophone(recordingConfig: RecordingConfig)`: Starts microphone streaming. Returns a promise that resolves to an object containing the recording result and a subscription to audio events. Throws an error if the recording fails to start.
+These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
+
+- `startMicrophone(recordingConfig: RecordingConfig)`: Starts microphone streaming with voice processing enabled. Returns a promise that resolves to an object containing the recording result and a subscription to audio events. Throws an error if the recording fails to start.
 
 - `stopMicrophone()`: Stops the current microphone streaming. Returns a promise that resolves to the audio recording data or null. Throws an error if the microphone streaming fails to stop.
 
-- `playSound(audio: string, turnId: string)`: Plays a sound. Throws an error if the sound fails to play.
+- `playSound(audio: string, turnId: string)`: Plays a sound while recording is active. Uses voice processing to prevent feedback. Throws an error if the sound fails to play.
 
-- `stopSound()`: Stops the currently playing sound. Throws an error if the sound fails to stop.
+- `stopSound()`: Stops the currently playing sound in simultaneous mode. Throws an error if the sound fails to stop.
 
-- `interruptSound()`: Interrupts the current sound. Throws an error if the sound fails to interrupt.
+- `interruptSound()`: Interrupts the current sound playback in simultaneous mode. Throws an error if the sound fails to interrupt.
 
-- `resumeSound()`: Resumes the current sound. Throws an error if the sound fails to resume.
+- `resumeSound()`: Resumes the current sound playback in simultaneous mode. Throws an error if the sound fails to resume.
 
-- `clearSoundQueueByTurnId(turnId: string)`: Clears the sound queue for a specific turn ID. Throws an error if the sound queue fails to clear.
+- `clearSoundQueueByTurnId(turnId: string)`: Clears the sound queue for a specific turn ID in simultaneous mode. Throws an error if the sound queue fails to clear.
 
-- `playWav(wavBase64: string)`: Plays a WAV format audio file from base64 encoded data. Unlike playSound(), this method plays the audio directly without queueing. Throws an error if the WAV audio fails to play.
+- `playWav(wavBase64: string)`: Plays a WAV format audio file from base64 encoded data. Unlike playSound(), this method plays the audio directly without queueing. The audio data should be base64 encoded WAV format. Throws an error if the WAV audio fails to play.
 
 ### Event Subscriptions
 
