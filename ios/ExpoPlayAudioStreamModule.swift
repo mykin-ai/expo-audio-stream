@@ -39,10 +39,6 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
     public func definition() -> ModuleDefinition {
         Name("ExpoPlayAudioStream")
         
-        OnCreate() {
-            promptForMicrophoneModes()
-        }
-        
         // Defines event names that the module can send to JavaScript.
         Events([audioDataEvent, soundIsPlayedEvent])
         
@@ -52,6 +48,11 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             self._microphone = nil
             self._soundPlayer = nil
             self.inittedAudioSession = false
+        }
+        
+        /// Prompts the user to select the microphone mode.
+        Function("promptMicrophoneModes") {
+            promptForMicrophoneModes()
         }
         
         /// Asynchronously starts audio recording with the given settings.

@@ -339,6 +339,15 @@ export class ExpoPlayAudioStream {
       throw new Error(`Failed to play wav: ${error}`);
     }
   }
+
+  /**
+   * Prompts the user to select the microphone mode.
+   * @returns {Promise<void>}
+   * @throws {Error} If the microphone mode fails to prompt.
+   */
+  static promptMicrophoneModes() {
+    ExpoPlayAudioStreamModule.promptMicrophoneModes();
+  }
 }
 
 export {
