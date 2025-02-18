@@ -165,6 +165,13 @@ These methods are specifically designed for scenarios where you need to record a
 
 - `subscribeToSoundChunkPlayed(onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>)`: Subscribes to events emitted when a sound chunk has finished playing. The callback receives a payload indicating if this was the final chunk. Returns a subscription that should be cleaned up when no longer needed.
 
+- `subscribe<T>(eventName: string, onEvent: (event: T | undefined) => Promise<void>)`: Generic subscription method for any event emitted by the module. Available events include:
+  - `AudioData`: Emitted when new audio data is available during recording
+  - `SoundChunkPlayed`: Emitted when a sound chunk finishes playing
+  - `SoundStarted`: Emitted when sound playback begins
+
+Note: When playing audio, you can use the special turnId `"supspend-sound-events"` to suppress sound events for that particular playback. This is useful when you want to play audio without triggering the sound events.
+
 All methods are static and most return Promises that resolve when the operation is complete. Error handling is built into each method, with descriptive error messages if operations fail.
 
 ## Swift Implementation 🍎

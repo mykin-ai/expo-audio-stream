@@ -16,6 +16,9 @@ class SoundPlayer {
     private var isPlaying: Bool = false  // Tracks if audio is currently playing
     private var isInterrupted: Bool = false
     private var isAudioEngineIsSetup: Bool = false
+    
+    // specific turnID to ignore sound events
+    internal let suspendSoundEventTurnId: String = "suspend-sound-events"
   
     private let audioPlaybackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
     
@@ -126,11 +129,10 @@ class SoundPlayer {
             Logger.debug("[SoundPlayer] Player is playing stopping")
             self.audioPlayerNode.pause()
             self.audioPlayerNode.stop()
-            
-            self.segmentsLeftToPlay = 0
         } else {
             Logger.debug("Player is not playing")
         }
+        self.segmentsLeftToPlay = 0
         promise.resolve(nil)
     }
     
@@ -198,6 +200,9 @@ class SoundPlayer {
             }
             let bufferTuple = (buffer: pcmBuffer, promise: resolver, turnId: strTurnId)
             audioQueue.append(bufferTuple)
+            if self.segmentsLeftToPlay == 0 && strTurnId != suspendSoundEventTurnId {
+                self.delegate?.onSoundStartedPlaying()
+            }
             self.segmentsLeftToPlay += 1
             // If not already playing, start playback
             playNextInQueue()
@@ -221,14 +226,17 @@ class SoundPlayer {
             self.audioPlayerNode.play()
         }
         self.bufferAccessQueue.async {
-            if let (buffer, promise, _) = self.audioQueue.first {
+            if let (buffer, promise, turnId) = self.audioQueue.first {
                 self.audioQueue.removeFirst()
 
                 self.audioPlayerNode.scheduleBuffer(buffer) {
                     self.segmentsLeftToPlay -= 1
                     let isFinalSegment = self.segmentsLeftToPlay == 0
                     
-                    self.delegate?.onSoundChunkPlayed(isFinalSegment)
+                    if turnId != self.suspendSoundEventTurnId {
+                        self.delegate?.onSoundChunkPlayed(isFinalSegment)
+                    }
+                    
                     promise(nil)
                     
 

@@ -4,6 +4,8 @@ import ExpoModulesCore
 
 let audioDataEvent: String = "AudioData"
 let soundIsPlayedEvent: String = "SoundChunkPlayed"
+let soundIsStartedEvent: String = "SoundStarted"
+
 
 public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate, SoundPlayerDelegate {
     private var _audioSessionManager: AudioSessionManager?
@@ -40,7 +42,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         Name("ExpoPlayAudioStream")
         
         // Defines event names that the module can send to JavaScript.
-        Events([audioDataEvent, soundIsPlayedEvent])
+        Events([audioDataEvent, soundIsPlayedEvent, soundIsStartedEvent])
         
         Function("destroy") {
             // Now we can properly reset all instances
@@ -416,5 +418,9 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
     
     func onSoundChunkPlayed(_ isFinal: Bool) {
         sendEvent(soundIsPlayedEvent, ["isFinal": isFinal])
+    }
+    
+    func onSoundStartedPlaying() {
+        sendEvent(soundIsStartedEvent)
     }
 }
