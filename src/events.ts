@@ -27,6 +27,12 @@ export type SoundChunkPlayedEventPayload = {
     isFinal: boolean
 }
 
+export const AudioEvents = {
+    AudioData: 'AudioData',
+    SoundChunkPlayed: 'SoundChunkPlayed',
+    SoundStarted: 'SoundStarted',
+}
+
 export function addAudioEventListener(
     listener: (event: AudioEventPayload) => Promise<void>
 ): Subscription {
@@ -38,3 +44,11 @@ export function addSoundChunkPlayedListener(
 ): Subscription {
     return emitter.addListener<SoundChunkPlayedEventPayload>('SoundChunkPlayed', listener)
 }
+
+export function subscribeToEvent<T extends unknown>(
+    eventName: string,
+    listener: (event: T | undefined) => Promise<void>
+): Subscription {
+    return emitter.addListener(eventName, listener)
+}
+

@@ -1,6 +1,6 @@
 {
   "name": "@mykin-ai/expo-audio-stream",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "Expo Play Audio Stream module",
   "main": "build/index.js",
   "types": "build/index.d.ts",

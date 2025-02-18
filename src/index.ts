@@ -7,10 +7,18 @@ import {
   StartRecordingResult,
 } from "./types";
 
-import { addAudioEventListener, addSoundChunkPlayedListener, AudioEventPayload, SoundChunkPlayedEventPayload } from "./events";
+import {
+  addAudioEventListener,
+  addSoundChunkPlayedListener,
+  AudioEventPayload,
+  SoundChunkPlayedEventPayload,
+  AudioEvents,
+  subscribeToEvent,
+} from "./events";
+
+const SuspendSoundEventTurnId = "suspend-sound-events";
 
 export class ExpoPlayAudioStream {
-
   /**
    * Destroys the audio stream module, cleaning up all resources.
    * This should be called when the module is no longer needed.
@@ -36,13 +44,7 @@ export class ExpoPlayAudioStream {
 
     if (onAudioStream && typeof onAudioStream == "function") {
       subscription = addAudioEventListener(async (event: AudioEventPayload) => {
-        const {
-          fileUri,
-          deltaSize,
-          totalSize,
-          position,
-          encoded,
-        } = event;
+        const { fileUri, deltaSize, totalSize, position, encoded } = event;
         if (!encoded) {
           console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
           throw new Error("Encoded audio data is missing");
@@ -231,13 +233,7 @@ export class ExpoPlayAudioStream {
       if (onAudioStream && typeof onAudioStream == "function") {
         subscription = addAudioEventListener(
           async (event: AudioEventPayload) => {
-            const {
-              fileUri,
-              deltaSize,
-              totalSize,
-              position,
-              encoded,
-            } = event;
+            const { fileUri, deltaSize, totalSize, position, encoded } = event;
             if (!encoded) {
               console.error(
                 `[ExpoPlayAudioStream] Encoded audio data is missing`
@@ -296,8 +292,7 @@ export class ExpoPlayAudioStream {
     onMicrophoneStream: (event: AudioDataEvent) => Promise<void>
   ): Subscription {
     return addAudioEventListener(async (event: AudioEventPayload) => {
-      const { fileUri, deltaSize, totalSize, position, encoded } =
-        event;
+      const { fileUri, deltaSize, totalSize, position, encoded } = event;
       if (!encoded) {
         console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
         throw new Error("Encoded audio data is missing");
@@ -325,10 +320,23 @@ export class ExpoPlayAudioStream {
   }
 
   /**
+   * Subscribes to events emitted by the audio stream module, for advanced use cases.
+   * @param eventName - The name of the event to subscribe to.
+   * @param onEvent - Callback function that will be called when the event is emitted.
+   * @returns {Subscription} A subscription object that can be used to unsubscribe from the events.
+   */
+  static subscribe<T extends unknown>(
+    eventName: string,
+    onEvent: (event: T | undefined) => Promise<void>
+  ): Subscription {
+    return subscribeToEvent(eventName, onEvent);
+  }
+
+  /**
    * Plays a WAV audio file from base64 encoded data.
    * Unlike playSound(), this method plays the audio directly without queueing.
    * @param {string} wavBase64 - Base64 encoded WAV audio data.
-   * @returns {Promise<void>} 
+   * @returns {Promise<void>}
    * @throws {Error} If the WAV audio fails to play.
    */
   static async playWav(wavBase64: string) {
@@ -356,4 +364,6 @@ export {
   AudioRecording,
   RecordingConfig,
   StartRecordingResult,
+  AudioEvents,
+  SuspendSoundEventTurnId,
 };
