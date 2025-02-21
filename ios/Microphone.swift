@@ -165,7 +165,7 @@ class Microphone {
             finalBuffer = buffer
         }
         
-        
+        let powerLevel: Float = AudioUtils.calculatePowerLevel(from: finalBuffer)
         
         let audioData = finalBuffer.audioBufferList.pointee.mBuffers
         guard let bufferData = audioData.mData else {
@@ -186,7 +186,7 @@ class Microphone {
                 let dataToProcess = accumulatedData
                 
                 // Emit the processed audio data
-                self.delegate?.onMicrophoneData(dataToProcess)
+                self.delegate?.onMicrophoneData(dataToProcess, powerLevel)
                 
                 self.lastEmissionTime = currentTime // Update last emission time
                 self.lastEmittedSize = totalDataSize
