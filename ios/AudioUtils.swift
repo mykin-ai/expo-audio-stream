@@ -114,4 +114,47 @@ class AudioUtils {
         
         return commonFormat
     }
+    
+    
+    static func calculatePowerLevel(from buffer: AVAudioPCMBuffer) -> Float {
+        let format = buffer.format.commonFormat
+        let length = Int(buffer.frameLength)
+        let channelCount = Int(buffer.format.channelCount)
+        
+        var totalRMS: Float = 0.0
+
+        if format == .pcmFormatFloat32, let channelData = buffer.floatChannelData {
+            // Process Float32 PCM
+            for channel in 0..<channelCount {
+                let data = channelData[channel]
+                var sum: Float = 0.0
+                
+                for sample in 0..<length {
+                    sum += data[sample] * data[sample]
+                }
+                
+                let channelRMS = sqrt(sum / Float(length))
+                totalRMS += channelRMS
+            }
+        } else if format == .pcmFormatInt16, let channelData = buffer.int16ChannelData {
+            // Process Int16 PCM
+            for channel in 0..<channelCount {
+                let data = channelData[channel]
+                var sum: Float = 0.0
+                
+                for sample in 0..<length {
+                    let normalizedSample = Float(data[sample]) / Float(Int16.max) // Convert to -1.0 to 1.0 range
+                    sum += normalizedSample * normalizedSample
+                }
+                
+                let channelRMS = sqrt(sum / Float(length))
+                totalRMS += channelRMS
+            }
+        } else {
+            return -160.0 // Unsupported format
+        }
+        
+        let avgRMS = totalRMS / Float(channelCount)
+        return avgRMS > 0 ? 20 * log10(avgRMS) : -160.0
+    }
 }

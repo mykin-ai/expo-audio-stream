@@ -15,7 +15,7 @@ class SoundPlayer {
     private var segmentsLeftToPlay: Int = 0
     private var isPlaying: Bool = false  // Tracks if audio is currently playing
     private var isInterrupted: Bool = false
-    private var isAudioEngineIsSetup: Bool = false
+    public var isAudioEngineIsSetup: Bool = false
     
     // specific turnID to ignore sound events
     internal let suspendSoundEventTurnId: String = "suspend-sound-events"
@@ -86,7 +86,7 @@ class SoundPlayer {
     
     /// Sets up the audio engine and player node if not already configured
     /// - Throws: Error if audio engine setup fails
-    private func ensureAudioEngineIsSetup() throws {
+    public func ensureAudioEngineIsSetup() throws {
         self.audioEngine = AVAudioEngine()
                     
         audioPlayerNode = AVAudioPlayerNode()

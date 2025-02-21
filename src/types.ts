@@ -17,6 +17,7 @@ export interface AudioDataEvent {
     fileUri: string
     eventDataSize: number
     totalSize: number
+    soundLevel?: number
 }
 
 

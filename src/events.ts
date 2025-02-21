@@ -21,6 +21,7 @@ export interface AudioEventPayload {
     totalSize: number
     mimeType: string
     streamUuid: string
+    soundLevel?: number
 }
 
 export type SoundChunkPlayedEventPayload = {

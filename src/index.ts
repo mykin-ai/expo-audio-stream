@@ -44,7 +44,7 @@ export class ExpoPlayAudioStream {
 
     if (onAudioStream && typeof onAudioStream == "function") {
       subscription = addAudioEventListener(async (event: AudioEventPayload) => {
-        const { fileUri, deltaSize, totalSize, position, encoded } = event;
+        const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } = event;
         if (!encoded) {
           console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
           throw new Error("Encoded audio data is missing");
@@ -55,6 +55,7 @@ export class ExpoPlayAudioStream {
           fileUri,
           eventDataSize: deltaSize,
           totalSize,
+          soundLevel,
         });
       });
     }
@@ -233,7 +234,7 @@ export class ExpoPlayAudioStream {
       if (onAudioStream && typeof onAudioStream == "function") {
         subscription = addAudioEventListener(
           async (event: AudioEventPayload) => {
-            const { fileUri, deltaSize, totalSize, position, encoded } = event;
+            const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } = event;
             if (!encoded) {
               console.error(
                 `[ExpoPlayAudioStream] Encoded audio data is missing`
@@ -246,6 +247,7 @@ export class ExpoPlayAudioStream {
               fileUri,
               eventDataSize: deltaSize,
               totalSize,
+              soundLevel,
             });
           }
         );
@@ -292,7 +294,7 @@ export class ExpoPlayAudioStream {
     onMicrophoneStream: (event: AudioDataEvent) => Promise<void>
   ): Subscription {
     return addAudioEventListener(async (event: AudioEventPayload) => {
-      const { fileUri, deltaSize, totalSize, position, encoded } = event;
+      const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } = event;
       if (!encoded) {
         console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
         throw new Error("Encoded audio data is missing");
@@ -303,6 +305,7 @@ export class ExpoPlayAudioStream {
         fileUri,
         eventDataSize: deltaSize,
         totalSize,
+        soundLevel,
       });
     });
   }

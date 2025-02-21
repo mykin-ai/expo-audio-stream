@@ -36,7 +36,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         return _soundPlayer!
     }
     
-    private var inittedAudioSession: Bool = false
+    private var isAudioSessionInitialized: Bool = false
 
     public func definition() -> ModuleDefinition {
         Name("ExpoPlayAudioStream")
@@ -49,7 +49,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             self._audioSessionManager = nil
             self._microphone = nil
             self._soundPlayer = nil
-            self.inittedAudioSession = false
+            self.isAudioSessionInitialized = false
         }
         
         /// Prompts the user to select the microphone mode.
@@ -179,8 +179,8 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         AsyncFunction("playSound") { (base64Chunk: String, turnId: String, promise: Promise) in
             Logger.debug("Play sound")
             do {
-                if !inittedAudioSession {
-                    try ensureInittedAudioSession()
+                if !isAudioSessionInitialized {
+                    try ensureAudioSessionInitialized()
                 }
         
                 try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, resolver: {
@@ -194,9 +194,9 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         }
         
         AsyncFunction("playWav") { (base64Chunk: String, promise: Promise) in
-            if !inittedAudioSession {
+            if !isAudioSessionInitialized {
                 do {
-                    try ensureInittedAudioSession()
+                    try ensureAudioSessionInitialized()
                 } catch {
                     print("Failed to init audio session \(error.localizedDescription)")
                     return
@@ -239,11 +239,20 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
                 pointsPerSecond: nil
             )
             
-            if !inittedAudioSession {
+            if !isAudioSessionInitialized {
                 do {
-                    try ensureInittedAudioSession(settings: settings)
+                    try ensureAudioSessionInitialized(settings: settings)
                 } catch {
                     promise.reject("ERROR", "Failed to init audio session \(error.localizedDescription)")
+                    return
+                }
+            }
+            
+            if !soundPlayer.isAudioEngineIsSetup {
+                do {
+                    try soundPlayer.ensureAudioEngineIsSetup()
+                } catch {
+                    promise.reject("ERROR", "Failed to init audio engine \(error.localizedDescription)")
                     return
                 }
             }
@@ -278,8 +287,8 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         }
     }
     
-    private func ensureInittedAudioSession(settings recordingSettings: RecordingSettings? = nil) throws {
-        if self.inittedAudioSession { return }
+    private func ensureAudioSessionInitialized(settings recordingSettings: RecordingSettings? = nil) throws {
+        if self.isAudioSessionInitialized { return }
 
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(
@@ -290,7 +299,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             try audioSession.setPreferredIOBufferDuration(1024 / settings.sampleRate)
         }
         try audioSession.setActive(true)
-        inittedAudioSession = true
+        isAudioSessionInitialized = true
      }
     
     // used for voice isolation, experimental
@@ -400,7 +409,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         }
     }
     
-    func onMicrophoneData(_ microphoneData: Data) {
+    func onMicrophoneData(_ microphoneData: Data, _ soundLevel: Float?) {
         let encodedData = microphoneData.base64EncodedString()
         // Construct the event payload similar to Android
         let eventBody: [String: Any] = [
@@ -410,7 +419,8 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             "encoded": encodedData,
             "deltaSize": 0,
             "totalSize": 0,
-            "mimeType": ""
+            "mimeType": "",
+            "soundLevel": soundLevel ?? -160
         ]
         // Emit the event to JavaScript
         sendEvent(audioDataEvent, eventBody)
