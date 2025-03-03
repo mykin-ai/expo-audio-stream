@@ -286,14 +286,13 @@ class AudioUtils {
                 guard let addr = bytes.baseAddress else { return }
                 let ptr = addr.assumingMemoryBound(to: Float.self)
                 for i in 0..<frameCount {
-                    channelData.pointee[i] = ptr[i]
+                    channelData.pointee[Int(i)] = ptr[Int(i)]
                 }
             }
         }
         
         return pcmBuffer
     }
-    
     /// Processes a raw PCM_S16LE (16-bit Little Endian) base64 encoded audio chunk and converts it to an AVAudioPCMBuffer
     /// - Parameters:
     ///   - base64String: Base64 encoded raw PCM_S16LE audio data
@@ -326,7 +325,7 @@ class AudioUtils {
                 let int16ptr = addr.assumingMemoryBound(to: Int16.self)
                 for i in 0..<frameCount {
                     // Read as little endian Int16
-                    channelData.pointee[i] = Int16(littleEndian: int16ptr[i])
+                    channelData.pointee[Int(i)] = Int16(littleEndian: int16ptr[Int(i)])
                 }
             }
         }
