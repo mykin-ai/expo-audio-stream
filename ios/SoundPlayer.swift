@@ -20,7 +20,7 @@ class SoundPlayer {
     // specific turnID to ignore sound events
     internal let suspendSoundEventTurnId: String = "suspend-sound-events"
   
-    private let audioPlaybackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
+    private let audioPlaybackFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100.0, channels: 1, interleaved: false)
     
     init() {
         NotificationCenter.default.addObserver(
@@ -189,15 +189,24 @@ class SoundPlayer {
                 try ensureAudioEngineIsSetup()
             }
             
+            // Process the audio chunk using the new method
+            guard let pcmBuffer = AudioUtils.processFloat32LEAudioChunk(base64String, audioFormat: self.audioPlaybackFormat!) else {
+                Logger.debug("[SoundPlayer] Failed to process audio chunk")
+                throw SoundPlayerError.invalidBase64String
+            }
+                        
+            // Old processing code commented out
+            /*
             guard let data = Data(base64Encoded: base64String) else {
                 Logger.debug("[SoundPlayer] Failed to decode base64 string")
                 throw SoundPlayerError.invalidBase64String
             }
             guard let pcmData = AudioUtils.removeRIFFHeaderIfNeeded(from: data),
-                  let pcmBuffer = AudioUtils.convertPCMDataToBuffer(pcmData, audioFormat: self.audioPlaybackFormat!) else {
+                    let pcmBuffer = AudioUtils.convertPCMDataToBuffer(pcmData, audioFormat: self.audioPlaybackFormat!) else {
                 Logger.debug("[SoundPlayer] Failed to process audio chunk")
                 return
             }
+            */
             let bufferTuple = (buffer: pcmBuffer, promise: resolver, turnId: strTurnId)
             audioQueue.append(bufferTuple)
             if self.segmentsLeftToPlay == 0 && strTurnId != suspendSoundEventTurnId {
@@ -205,7 +214,10 @@ class SoundPlayer {
             }
             self.segmentsLeftToPlay += 1
             // If not already playing, start playback
-            playNextInQueue()
+            if audioQueue.count == 1 {
+                Logger.debug("[SoundPlayer] Starting playback [ \(audioQueue.count)]")
+                playNextInQueue()
+            }
         } catch {
             Logger.debug("[SoundPlayer] Failed to enqueue audio chunk: \(error.localizedDescription)")
             rejecter("ERROR_SOUND_PLAYER", "Failed to enqueue audio chunk: \(error.localizedDescription)", nil)
