@@ -157,4 +157,180 @@ class AudioUtils {
         let avgRMS = totalRMS / Float(channelCount)
         return avgRMS > 0 ? 20 * log10(avgRMS) : -160.0
     }
+    
+    /// Processes a raw 16-bit 16kHz base64 encoded audio chunk and converts it to an AVAudioPCMBuffer
+    /// - Parameters:
+    ///   - base64String: Base64 encoded raw 16-bit PCM audio data
+    ///   - audioFormat: Target audio format for the buffer
+    /// - Returns: AVAudioPCMBuffer containing the processed audio data, or nil if processing fails
+    static func processRawAudioChunk(_ base64String: String, audioFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
+        // Decode base64 string to raw data
+        guard let data = Data(base64Encoded: base64String) else {
+            Logger.debug("[AudioUtils] Failed to decode base64 string")
+            return nil
+        }
+        
+        // Create buffer for Float32 samples
+        let frameCount = AVAudioFrameCount(data.count / 2) // 2 bytes per sample for 16-bit audio
+        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: frameCount) else {
+            Logger.debug("[AudioUtils] Failed to create audio buffer")
+            return nil
+        }
+        
+        // Convert Int16 samples to Float32
+        var int16Samples = [Int16](repeating: 0, count: data.count / 2)
+        let _ = int16Samples.withUnsafeMutableBytes { buffer in
+            data.copyBytes(to: buffer)
+        }
+        
+        // Convert to normalized float values (-1.0 to 1.0)
+        let floatSamples = int16Samples.map { Float($0) / 32768.0 }
+        
+        pcmBuffer.frameLength = frameCount
+        if let channelData = pcmBuffer.floatChannelData {
+            for i in 0..<floatSamples.count {
+                channelData.pointee[i] = floatSamples[i]
+            }
+        }
+        
+        return pcmBuffer
+    }
+    
+    /// Removes WAV/RIFF header from audio data if present
+    /// - Parameter data: The input audio data that might contain a WAV/RIFF header
+    /// - Returns: Audio data with WAV/RIFF header removed, or original data if no header found
+    static func removeWavHeader(from data: Data) -> Data? {
+        // Check if data starts with "RIFF" and is long enough to contain a WAV header
+        guard data.count >= 44,
+              let riffString = String(data: data.prefix(4), encoding: .ascii),
+              riffString == "RIFF",
+              let waveString = String(data: data[8..<12], encoding: .ascii),
+              waveString == "WAVE" else {
+            // If not a WAV file, return original data
+            return data
+        }
+        
+        // Find the "data" chunk
+        var offset = 12 // Start after RIFF header and WAVE identifier
+        while offset < data.count - 8 { // Need at least 8 bytes for chunk header
+            let chunkID = String(data: data[offset..<offset+4], encoding: .ascii) ?? ""
+            let chunkSize = Int(data[offset+4..<offset+8].withUnsafeBytes { $0.load(as: UInt32.self) }.littleEndian)
+            
+            if chunkID == "data" {
+                // Found the data chunk, return everything after its header
+                let dataStart = offset + 8
+                return data.subdata(in: dataStart..<data.count)
+            }
+            
+            // Move to next chunk (chunk header is 8 bytes + chunk size)
+            offset += 8 + chunkSize
+            // Ensure chunk alignment to 2 bytes
+            if chunkSize % 2 != 0 { offset += 1 }
+        }
+        
+        Logger.debug("[AudioUtils] Failed to find data chunk in WAV file")
+        return nil
+    }
+    
+    /// Checks if data contains WAV/RIFF header
+    /// - Parameter data: The data to check
+    /// - Returns: true if data starts with RIFF....WAVE
+    static private func isWavFormat(_ data: Data) -> Bool {
+        guard data.count >= 12,
+              let riffString = String(data: data.prefix(4), encoding: .ascii),
+              riffString == "RIFF",
+              let waveString = String(data: data[8..<12], encoding: .ascii),
+              waveString == "WAVE" else {
+            return false
+        }
+        return true
+    }
+
+    /// Processes a raw Float32LE (pcm_f32le) base64 encoded audio chunk and converts it to an AVAudioPCMBuffer
+    /// - Parameters:
+    ///   - base64String: Base64 encoded raw Float32LE PCM audio data or WAV file (automatically detected)
+    ///   - audioFormat: Target audio format for the buffer
+    /// - Returns: AVAudioPCMBuffer containing the processed audio data, or nil if processing fails
+    static func processFloat32LEAudioChunk(_ base64String: String, audioFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
+        // Decode base64 string to raw data
+        guard let data = Data(base64Encoded: base64String) else {
+            Logger.debug("[AudioUtils] Failed to decode base64 string")
+            return nil
+        }
+        
+        // Automatically detect and remove WAV header if present
+        let audioData: Data
+        if isWavFormat(data) {
+            Logger.debug("[AudioUtils] WAV format detected, removing header")
+            guard let pcmData = removeWavHeader(from: data) else {
+                Logger.debug("[AudioUtils] Failed to process WAV header")
+                return nil
+            }
+            audioData = pcmData
+        } else {
+            Logger.debug("[AudioUtils] Raw PCM format detected")
+            audioData = data
+        }
+        
+        // Create buffer for Float32 samples
+        let frameCount = AVAudioFrameCount(audioData.count / 4) // 4 bytes per sample for Float32 audio
+        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: frameCount) else {
+            Logger.debug("[AudioUtils] Failed to create audio buffer")
+            return nil
+        }
+        
+        // Copy float samples directly from data
+        pcmBuffer.frameLength = frameCount
+        if let channelData = pcmBuffer.floatChannelData {
+            audioData.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> Void in
+                guard let addr = bytes.baseAddress else { return }
+                let ptr = addr.assumingMemoryBound(to: Float.self)
+                for i in 0..<frameCount {
+                    channelData.pointee[i] = ptr[i]
+                }
+            }
+        }
+        
+        return pcmBuffer
+    }
+    
+    /// Processes a raw PCM_S16LE (16-bit Little Endian) base64 encoded audio chunk and converts it to an AVAudioPCMBuffer
+    /// - Parameters:
+    ///   - base64String: Base64 encoded raw PCM_S16LE audio data
+    ///   - audioFormat: Target audio format for the buffer
+    /// - Returns: AVAudioPCMBuffer containing the processed audio data, or nil if processing fails
+    static func processPCM16LEAudioChunk(_ base64String: String, audioFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
+        // Decode base64 string to raw data
+        guard let data = Data(base64Encoded: base64String) else {
+            Logger.debug("[AudioUtils] Failed to decode base64 string")
+            return nil
+        }
+        
+        // Verify format is Int16
+        guard audioFormat.commonFormat == .pcmFormatInt16 else {
+            Logger.debug("[AudioUtils] Invalid format: expected PCM16 format")
+            return nil
+        }
+        
+        // Create buffer for Int16 samples
+        let frameCount = AVAudioFrameCount(data.count / 2) // 2 bytes per sample for 16-bit audio
+        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: frameCount) else {
+            Logger.debug("[AudioUtils] Failed to create audio buffer")
+            return nil
+        }
+        
+        pcmBuffer.frameLength = frameCount
+        if let channelData = pcmBuffer.int16ChannelData {
+            data.withUnsafeBytes { ptr in
+                guard let addr = ptr.baseAddress else { return }
+                let int16ptr = addr.assumingMemoryBound(to: Int16.self)
+                for i in 0..<frameCount {
+                    // Read as little endian Int16
+                    channelData.pointee[i] = Int16(littleEndian: int16ptr[i])
+                }
+            }
+        }
+        
+        return pcmBuffer
+    }
 }
