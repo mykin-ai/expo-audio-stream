@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -23,7 +24,21 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.max
 import kotlin.math.min
 
-data class ChunkData(val chunk: String, val turnId: String, val promise: Promise) // contains the base64 chunk
+/**
+ * Enum representing PCM encoding formats
+ */
+enum class PCMEncoding {
+    PCM_F32LE,  // 32-bit float, little-endian
+    PCM_S16LE   // 16-bit signed integer, little-endian
+}
+
+data class ChunkData(
+    val chunk: String, 
+    val turnId: String, 
+    val promise: Promise,
+    val encoding: PCMEncoding = PCMEncoding.PCM_S16LE
+) // contains the base64 chunk and encoding info
+
 data class AudioChunk(
     val audioData: FloatArray,
     val promise: Promise,
@@ -44,28 +59,51 @@ class AudioPlaybackManager() {
     private var isPlaying = false
     private var isMuted = false
     private var currentTurnId: String? = null
+    
+    // Current sound configuration
+    private var config: SoundConfig = SoundConfig.DEFAULT
 
     init {
         initializeAudioTrack()
         initializeChannels()
     }
 
-    fun playAudio(chunk: String, turnId: String, promise: Promise) {
-        coroutineScope.launch {
-            if (processingChannel.isClosedForSend || playbackChannel.isClosedForSend) {
-                Log.d("ExpoPlayStreamModule", "Re-initializing channels")
-                initializeChannels()
-            }
-            Log.d("ExpoPlayStreamModule", "PlayAudio input $turnId and current id $currentTurnId")
-            currentTurnId = turnId
-            isMuted = false
-            processingChannel.send(ChunkData(chunk, turnId, promise))
-            ensureProcessingLoopStarted()
-        }
-    }
+    private fun initializeAudioTrack() {
+        val audioFormat =
+            AudioFormat.Builder()
+                .setSampleRate(config.sampleRate)
+                .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build()
 
-    fun setCurrentTurnId(turnId: String) {
-        currentTurnId = turnId
+        val minBufferSize =
+            AudioTrack.getMinBufferSize(
+                config.sampleRate,
+                AudioFormat.CHANNEL_OUT_MONO,
+                AudioFormat.ENCODING_PCM_FLOAT
+            )
+
+        // Configure audio attributes based on playback mode
+        val audioAttributesBuilder = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+
+        // Set content type based on playback mode
+        val contentType = when (config.playbackMode) {
+            PlaybackMode.CONVERSATION, PlaybackMode.VOICE_PROCESSING ->
+                AudioAttributes.CONTENT_TYPE_SPEECH
+            else ->
+                AudioAttributes.CONTENT_TYPE_MUSIC
+        }
+
+        audioAttributesBuilder.setContentType(contentType)
+
+        audioTrack =
+            AudioTrack.Builder()
+                .setAudioAttributes(audioAttributesBuilder.build())
+                .setAudioFormat(audioFormat)
+                .setBufferSizeInBytes(minBufferSize * 2)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
     }
 
     private fun initializeChannels() {
@@ -76,6 +114,24 @@ class AudioPlaybackManager() {
         if (!::playbackChannel.isInitialized || playbackChannel.isClosedForSend) {
             playbackChannel = Channel(Channel.UNLIMITED)
         }
+    }
+
+    fun playAudio(chunk: String, turnId: String, promise: Promise, encoding: PCMEncoding = PCMEncoding.PCM_S16LE) {
+        coroutineScope.launch {
+            if (processingChannel.isClosedForSend || playbackChannel.isClosedForSend) {
+                Log.d("ExpoPlayStreamModule", "Re-initializing channels")
+                initializeChannels()
+            }
+            Log.d("ExpoPlayStreamModule", "PlayAudio input $turnId and current id $currentTurnId with encoding $encoding")
+            currentTurnId = turnId
+            isMuted = false
+            processingChannel.send(ChunkData(chunk, turnId, promise, encoding))
+            ensureProcessingLoopStarted()
+        }
+    }
+
+    fun setCurrentTurnId(turnId: String) {
+        currentTurnId = turnId
     }
 
     fun runOnDispose() {
@@ -119,7 +175,9 @@ class AudioPlaybackManager() {
         try {
             val decodedBytes = Base64.decode(chunkData.chunk, Base64.DEFAULT)
             val audioDataWithoutRIFF = removeRIFFHeaderIfNeeded(decodedBytes)
-            val audioData = convertPCMDataToFloatArray(audioDataWithoutRIFF)
+            
+            // Use the encoding specified in the chunk data
+            val audioData = convertPCMDataToFloatArray(audioDataWithoutRIFF, chunkData.encoding)
 
             playbackChannel.send(
                 AudioChunk(
@@ -251,35 +309,6 @@ class AudioPlaybackManager() {
         }
     }
 
-    private fun initializeAudioTrack() {
-        val audioFormat =
-            AudioFormat.Builder()
-                .setSampleRate(16000)
-                .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .build()
-
-        val minBufferSize =
-            AudioTrack.getMinBufferSize(
-                16000,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_FLOAT
-            )
-
-        audioTrack =
-            AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setAudioFormat(audioFormat)
-                .setBufferSizeInBytes(minBufferSize * 2)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-    }
-
     private fun startPlaybackLoop() {
         currentPlaybackJob =
             coroutineScope.launch {
@@ -302,58 +331,69 @@ class AudioPlaybackManager() {
         withContext(Dispatchers.IO) {
             try {
                 val chunkSize = chunk.audioData.size
+                
+                Log.d("ExpoPlayStreamModule", "Playing chunk with $chunkSize frames")
 
                 suspendCancellableCoroutine { continuation ->
-                    val listener =
-                        object : AudioTrack.OnPlaybackPositionUpdateListener {
-                            override fun onMarkerReached(track: AudioTrack) {
-                                audioTrack.setPlaybackPositionUpdateListener(null)
-                                if (!chunk.isPromiseSettled) {
-                                    chunk.isPromiseSettled = true
-                                    chunk.promise.resolve(null)
-                                }
-                                continuation.resumeWith(Result.success(Unit))
-                            }
-
-                            override fun onPeriodicNotification(track: AudioTrack) {}
-                        }
-
-                    audioTrack.setPlaybackPositionUpdateListener(listener)
-                    audioTrack.setNotificationMarkerPosition(chunkSize)
-                    val written =
-                        audioTrack.write(
-                            chunk.audioData,
-                            0,
-                            chunkSize,
-                            AudioTrack.WRITE_BLOCKING
-                        )
-
-                    Log.d("ExpoPlayStreamModule", "Chunk played : $written")
-                    if (written != chunkSize) {
-                        audioTrack.setPlaybackPositionUpdateListener(null)
-                        val error = Exception("Failed to write entire audio chunk")
-                        if (!chunk.isPromiseSettled) {
-                            chunk.isPromiseSettled = true
-                            //                            chunk.promise.reject("ERR_PLAYBACK",
-                            // error.message, error)
-                            chunk.promise.resolve(null)
-                        }
-                        continuation.resumeWith(Result.failure(error))
+                    // Write the audio data
+                    val written = audioTrack.write(
+                        chunk.audioData,
+                        0,
+                        chunkSize,
+                        AudioTrack.WRITE_BLOCKING
+                    )
+                    
+                    Log.d("ExpoPlayStreamModule", "Chunk written: $written frames")
+                    
+                    // Resolve the promise immediately after writing
+                    // This lets the client know the data was accepted
+                    if (!chunk.isPromiseSettled) {
+                        chunk.isPromiseSettled = true
+                        chunk.promise.resolve(null)
                     }
-
+                    
+                    if (written != chunkSize) {
+                        // If we couldn't write all the data, resume with failure
+                        val error = Exception("Failed to write entire audio chunk")
+                        continuation.resumeWith(Result.failure(error))
+                        return@suspendCancellableCoroutine
+                    }
+                    
+                    // Calculate expected playback duration in milliseconds
+                    val playbackDurationMs = (written.toFloat() / config.sampleRate * 1000).toLong()
+                    Log.d("ExpoPlayStreamModule", "Expected playback duration: ${playbackDurationMs}ms")
+                    
+                    // Store a reference to the delay job
+                    val delayJob = coroutineScope.launch {
+                        // Wait for a portion of the audio to play
+                        val waitTime = (playbackDurationMs * 0.5).toLong().coerceAtMost(90)
+                        delay(waitTime)
+                        Log.d("ExpoPlayStreamModule", "Resuming after ${waitTime}ms delay (50% of duration)")
+                        continuation.resumeWith(Result.success(Unit))
+                        
+                        // Continue monitoring for logging purposes
+                        delay(playbackDurationMs - waitTime)
+                        Log.d("ExpoPlayStreamModule", "Playback of chunk likely completed after ${playbackDurationMs}ms")
+                    }
+                    
                     continuation.invokeOnCancellation {
-                        audioTrack.setPlaybackPositionUpdateListener(null)
+                        Log.d("ExpoPlayStreamModule", "Playback cancelled")
+                        
+                        // Cancel the delay job to prevent it from resuming the continuation
+                        delayJob.cancel()
+                        
+                        // Settle the promise if it hasn't been settled yet
                         if (!chunk.isPromiseSettled) {
                             chunk.isPromiseSettled = true
-                            chunk.promise.reject(
-                                "ERR_PLAYBACK_CANCELLED",
-                                "Playback was cancelled",
-                                null
-                            )
+                            chunk.promise.reject("ERR_PLAYBACK_CANCELLED", "Playback was cancelled", null)
                         }
+                        
+                        // Any other cleanup specific to this chunk
+                        // For example, if we were tracking this chunk in a map or list, we would remove it
                     }
                 }
             } catch (e: Exception) {
+                Log.e("ExpoPlayStreamModule", "Error in playChunk: ${e.message}", e)
                 if (!chunk.isPromiseSettled) {
                     chunk.isPromiseSettled = true
                     chunk.promise.reject("ERR_PLAYBACK", e.message, e)
@@ -362,13 +402,32 @@ class AudioPlaybackManager() {
         }
     }
 
-    private fun convertPCMDataToFloatArray(pcmData: ByteArray): FloatArray {
-        val shortBuffer = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-        val shortArray = ShortArray(shortBuffer.remaining())
-        shortBuffer.get(shortArray)
-        return FloatArray(shortArray.size) { index -> shortArray[index] / 32768.0f }
+    /**
+     * Converts PCM data to a float array based on the specified encoding format
+     * @param pcmData The raw PCM data bytes
+     * @param encoding The PCM encoding format (PCM_F32LE or PCM_S16LE)
+     * @return FloatArray containing normalized audio samples (-1.0 to 1.0)
+     */
+    private fun convertPCMDataToFloatArray(pcmData: ByteArray, encoding: PCMEncoding): FloatArray {
+        return when (encoding) {
+            PCMEncoding.PCM_F32LE -> {
+                // Handle Float32 PCM data (4 bytes per sample)
+                val floatBuffer = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+                val floatArray = FloatArray(floatBuffer.remaining())
+                floatBuffer.get(floatArray)
+                floatArray
+            }
+            PCMEncoding.PCM_S16LE -> {
+                // Handle Int16 PCM data (2 bytes per sample)
+                val shortBuffer = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                val shortArray = ShortArray(shortBuffer.remaining())
+                shortBuffer.get(shortArray)
+                // Convert Int16 samples to normalized Float32 (-1.0 to 1.0)
+                FloatArray(shortArray.size) { index -> shortArray[index] / 32768.0f }
+            }
+        }
     }
-
+    
     private fun removeRIFFHeaderIfNeeded(audioData: ByteArray): ByteArray {
         val headerSize = 44
         val riffHeader = "RIFF".toByteArray(Charsets.US_ASCII)
@@ -383,5 +442,111 @@ class AudioPlaybackManager() {
     private fun ByteArray.startsWith(prefix: ByteArray): Boolean {
         if (this.size < prefix.size) return false
         return prefix.contentEquals(this.sliceArray(prefix.indices))
+    }
+
+    /**
+     * Updates the sound configuration
+     * @param newConfig The new configuration to apply
+     * @param promise Promise to resolve when configuration is updated
+     */
+    fun updateConfig(newConfig: SoundConfig, promise: Promise) {
+        Log.d("ExpoPlayStreamModule", "Updating sound configuration - sampleRate: ${newConfig.sampleRate}, playbackMode: ${newConfig.playbackMode}")
+        
+        // Skip if configuration hasn't changed
+        if (newConfig.sampleRate == config.sampleRate && newConfig.playbackMode == config.playbackMode) {
+            Log.d("ExpoPlayStreamModule", "Configuration unchanged, skipping update")
+            promise.resolve(null)
+            return
+        }
+        
+        // Save current playback state
+        val wasPlaying = isPlaying
+        
+        // Step 1: Pause audio and cancel jobs (but don't close channels)
+        pauseAudioAndJobs()
+        
+        // Step 2: Update configuration
+        config = newConfig
+        
+        // Step 3: Create new AudioTrack with updated config
+        initializeAudioTrack()
+        
+        // Step 4: Restart playback if it was active before
+        if (wasPlaying) {
+            restartPlayback()
+        }
+        
+        promise.resolve(null)
+    }
+    
+    /**
+     * Pauses audio without touching the jobs or channels
+     */
+    private fun pauseAudioAndJobs() {
+        if (isPlaying) {
+            Log.d("ExpoPlayStreamModule", "Pausing audio before config update")
+            
+            try {
+                // Pause and flush audio track
+                audioTrack.pause()
+                audioTrack.flush()
+                
+                // Update state
+                isPlaying = false
+                
+                // Note: We don't cancel any jobs anymore
+                // The playback loop will continue running but won't process chunks due to isPlaying being false
+                // This avoids any issues with channels being closed when cancelling jobs
+                Log.d("ExpoPlayStreamModule", "Audio paused, playback job left running")
+            } catch (e: Exception) {
+                Log.e("ExpoPlayStreamModule", "Error pausing AudioTrack: ${e.message}", e)
+            }
+        }
+        
+        // Release AudioTrack
+        if (::audioTrack.isInitialized) {
+            try {
+                Log.d("ExpoPlayStreamModule", "Releasing AudioTrack")
+                audioTrack.release()
+            } catch (e: Exception) {
+                Log.e("ExpoPlayStreamModule", "Error releasing AudioTrack: ${e.message}", e)
+            }
+        }
+    }
+    
+    /**
+     * Restarts playback with the new AudioTrack
+     */
+    private fun restartPlayback() {
+        try {
+            Log.d("ExpoPlayStreamModule", "Restarting playback")
+            
+            // Start AudioTrack
+            audioTrack.play()
+            isPlaying = true
+            
+            // The playback loop is already running, we just need to set isPlaying to true
+            // Only start a new loop if the current one doesn't exist
+            if (currentPlaybackJob == null || currentPlaybackJob?.isActive != true) {
+                Log.d("ExpoPlayStreamModule", "Starting new playback loop")
+                startPlaybackLoop()
+            } else {
+                Log.d("ExpoPlayStreamModule", "Using existing playback loop")
+            }
+            
+            // Ensure processing loop is running
+            ensureProcessingLoopStarted()
+        } catch (e: Exception) {
+            Log.e("ExpoPlayStreamModule", "Error restarting playback: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Resets the sound configuration to default values
+     * @param promise Promise to resolve when configuration is reset
+     */
+    fun resetConfigToDefault(promise: Promise) {
+        Log.d("ExpoPlayStreamModule", "Resetting sound configuration to default values")
+        updateConfig(SoundConfig.DEFAULT, promise)
     }
 }

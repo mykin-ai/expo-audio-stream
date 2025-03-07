@@ -146,8 +146,20 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         
         
         
-        AsyncFunction("playAudio") { (base64chunk: String, turnId: String, promise: Promise) in
-            audioSessionManager.playAudio(base64chunk, turnId, resolver: { _ in
+        AsyncFunction("playAudio") { (base64chunk: String, turnId: String, encoding: String? , promise: Promise) in
+            // Determine the audio format based on the encoding parameter
+            let commonFormat: AVAudioCommonFormat
+            switch encoding {
+            case "pcm_f32le":
+                commonFormat = .pcmFormatFloat32
+            case "pcm_s16le", nil:
+                commonFormat = .pcmFormatInt16
+            default:
+                Logger.debug("[ExpoPlayAudioStreamModule] Unsupported encoding: \(encoding ?? "nil"), defaulting to PCM_S16LE")
+                commonFormat = .pcmFormatInt16
+            }
+            
+            audioSessionManager.playAudio(base64chunk, turnId, commonFormat: commonFormat, resolver: { _ in
                 promise.resolve(nil)
             }, rejecter: { code, message, error in
                 promise.reject(code ?? "ERR_UNKNOWN", message ?? "Unknown error")
@@ -176,18 +188,30 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             promise.resolve(result)
         }
         
-        AsyncFunction("playSound") { (base64Chunk: String, turnId: String, promise: Promise) in
+        AsyncFunction("playSound") { (base64Chunk: String, turnId: String, encoding: String?, promise: Promise) in
             Logger.debug("Play sound")
             do {
                 if !isAudioSessionInitialized {
                     try ensureAudioSessionInitialized()
+                }
+                
+                // Determine the audio format based on the encoding parameter
+                let commonFormat: AVAudioCommonFormat
+                switch encoding {
+                case "pcm_f32le":
+                    commonFormat = .pcmFormatFloat32
+                case "pcm_s16le", nil:
+                    commonFormat = .pcmFormatInt16
+                default:
+                    Logger.debug("[ExpoPlayAudioStreamModule] Unsupported encoding: \(encoding ?? "nil"), defaulting to PCM_S16LE")
+                    commonFormat = .pcmFormatInt16
                 }
         
                 try soundPlayer.play(audioChunk: base64Chunk, turnId: turnId, resolver: {
                     _ in promise.resolve(nil)
                 }, rejecter: {code, message, error in
                     promise.reject(code ?? "ERR_UNKNOWN", message ?? "Unknown error")
-                })
+                }, commonFormat: commonFormat)
             } catch {
                 print("Error enqueuing audio: \(error.localizedDescription)")
             }
@@ -246,17 +270,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
                     promise.reject("ERROR", "Failed to init audio session \(error.localizedDescription)")
                     return
                 }
-            }
-            
-            if !soundPlayer.isAudioEngineIsSetup {
-                do {
-                    try soundPlayer.ensureAudioEngineIsSetup()
-                } catch {
-                    promise.reject("ERROR", "Failed to init audio engine \(error.localizedDescription)")
-                    return
-                }
-            }
-            
+            }            
             
             if let result = self.microphone.startRecording(settings: settings, intervalMilliseconds: interval) {
                 if let resError = result.error {
@@ -276,11 +290,65 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             }
         }
         
+        /// Stops the microphone recording and releases associated resources
+        /// - Parameter promise: A promise to resolve when microphone recording is stopped
+        /// - Note: This method stops the active recording session, processes any remaining audio data,
+        ///         and releases hardware resources. It should be called when the app no longer needs
+        ///         microphone access to conserve battery and system resources.
         AsyncFunction("stopMicrophone") { (promise: Promise) in
-            microphone.stopRecording()
-            promise.resolve(nil)
+            microphone.stopRecording(resolver: promise)
         }
-    
+        
+        /// Sets the sound player configuration
+        /// - Parameters:
+        ///   - config: A dictionary containing configuration options:
+        ///     - `sampleRate`: The sample rate for audio playback (default is 16000.0).
+        ///     - `playbackMode`: The playback mode ("regular", "voiceProcessing", or "conversation").
+        ///     - `useDefault`: When true, resets to default configuration regardless of other parameters.
+        ///   - promise: A promise to resolve when configuration is updated or reject with an error.
+        AsyncFunction("setSoundConfig") { (config: [String: Any], promise: Promise) in
+            // Check if we should use default configuration
+            let useDefault = config["useDefault"] as? Bool ?? false
+            
+            do {
+                if !isAudioSessionInitialized {
+                    try ensureAudioSessionInitialized()
+                }
+                
+                if useDefault {
+                    // Reset to default configuration
+                    Logger.debug("[ExpoPlayAudioStreamModule] Resetting sound configuration to default values")
+                    try soundPlayer.resetConfigToDefault()
+                } else {
+                    // Extract configuration values from the provided dictionary
+                    let sampleRate = config["sampleRate"] as? Double ?? 16000.0
+                    let playbackModeString = config["playbackMode"] as? String ?? "regular"
+                    
+                    // Convert string playback mode to enum
+                    let playbackMode: PlaybackMode
+                    switch playbackModeString {
+                    case "voiceProcessing":
+                        playbackMode = .voiceProcessing
+                    case "conversation":
+                        playbackMode = .conversation
+                    default:
+                        playbackMode = .regular
+                    }
+                    
+                    // Create a new SoundConfig object
+                    let soundConfig = SoundConfig(sampleRate: sampleRate, playbackMode: playbackMode)
+                    
+                    // Update the sound player configuration
+                    Logger.debug("[ExpoPlayAudioStreamModule] Setting sound configuration - sampleRate: \(sampleRate), playbackMode: \(playbackModeString)")
+                    try soundPlayer.updateConfig(soundConfig)
+                }
+                
+                promise.resolve(nil)
+            } catch {
+                promise.reject("ERROR_CONFIG_UPDATE", "Failed to set sound configuration: \(error.localizedDescription)")
+            }
+        }
+        
         /// Clears all audio files stored in the document directory.
         Function("clearAudioFiles") {
             clearAudioFiles()

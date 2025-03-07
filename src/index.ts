@@ -5,6 +5,11 @@ import {
   AudioRecording,
   RecordingConfig,
   StartRecordingResult,
+  SoundConfig,
+  PlaybackMode,
+  Encoding,
+  EncodingTypes,
+  PlaybackModes,
 } from "./types";
 
 import {
@@ -44,7 +49,8 @@ export class ExpoPlayAudioStream {
 
     if (onAudioStream && typeof onAudioStream == "function") {
       subscription = addAudioEventListener(async (event: AudioEventPayload) => {
-        const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } = event;
+        const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } =
+          event;
         if (!encoded) {
           console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
           throw new Error("Encoded audio data is missing");
@@ -89,12 +95,22 @@ export class ExpoPlayAudioStream {
   /**
    * Plays an audio chunk.
    * @param {string} base64Chunk - The base64 encoded audio chunk to play.
+   * @param {string} turnId - The turn ID.
+   * @param {string} [encoding] - The encoding format of the audio data ('pcm_f32le' or 'pcm_s16le').
    * @returns {Promise<void>}
    * @throws {Error} If the audio chunk fails to stream.
    */
-  static async playAudio(base64Chunk: string, turnId: string): Promise<void> {
+  static async playAudio(
+    base64Chunk: string,
+    turnId: string,
+    encoding?: Encoding
+  ): Promise<void> {
     try {
-      return ExpoPlayAudioStreamModule.playAudio(base64Chunk, turnId);
+      return ExpoPlayAudioStreamModule.playAudio(
+        base64Chunk,
+        turnId,
+        encoding ?? EncodingTypes.PCM_S16LE
+      );
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to stream audio chunk: ${error}`);
@@ -148,12 +164,21 @@ export class ExpoPlayAudioStream {
    * Plays a sound.
    * @param {string} audio - The audio to play.
    * @param {string} turnId - The turn ID.
+   * @param {string} [encoding] - The encoding format of the audio data ('pcm_f32le' or 'pcm_s16le').
    * @returns {Promise<void>}
    * @throws {Error} If the sound fails to play.
    */
-  static async playSound(audio: string, turnId: string): Promise<void> {
+  static async playSound(
+    audio: string,
+    turnId: string,
+    encoding?: Encoding
+  ): Promise<void> {
     try {
-      await ExpoPlayAudioStreamModule.playSound(audio, turnId);
+      await ExpoPlayAudioStreamModule.playSound(
+        audio,
+        turnId,
+        encoding ?? EncodingTypes.PCM_S16LE
+      );
     } catch (error) {
       console.error(error);
       throw new Error(`Failed to enqueue audio: ${error}`);
@@ -234,7 +259,14 @@ export class ExpoPlayAudioStream {
       if (onAudioStream && typeof onAudioStream == "function") {
         subscription = addAudioEventListener(
           async (event: AudioEventPayload) => {
-            const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } = event;
+            const {
+              fileUri,
+              deltaSize,
+              totalSize,
+              position,
+              encoded,
+              soundLevel,
+            } = event;
             if (!encoded) {
               console.error(
                 `[ExpoPlayAudioStream] Encoded audio data is missing`
@@ -294,7 +326,8 @@ export class ExpoPlayAudioStream {
     onMicrophoneStream: (event: AudioDataEvent) => Promise<void>
   ): Subscription {
     return addAudioEventListener(async (event: AudioEventPayload) => {
-      const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } = event;
+      const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } =
+        event;
       if (!encoded) {
         console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
         throw new Error("Encoded audio data is missing");
@@ -352,6 +385,21 @@ export class ExpoPlayAudioStream {
   }
 
   /**
+   * Sets the sound player configuration.
+   * @param {SoundConfig} config - Configuration options for the sound player.
+   * @returns {Promise<void>}
+   * @throws {Error} If the configuration fails to update.
+   */
+  static async setSoundConfig(config: SoundConfig): Promise<void> {
+    try {
+      await ExpoPlayAudioStreamModule.setSoundConfig(config);
+    } catch (error) {
+      console.error(error);
+      throw new Error(`Failed to set sound configuration: ${error}`);
+    }
+  }
+
+  /**
    * Prompts the user to select the microphone mode.
    * @returns {Promise<void>}
    * @throws {Error} If the microphone mode fails to prompt.
@@ -369,4 +417,9 @@ export {
   StartRecordingResult,
   AudioEvents,
   SuspendSoundEventTurnId,
+  SoundConfig,
+  PlaybackMode,
+  Encoding,
+  EncodingTypes,
+  PlaybackModes,
 };

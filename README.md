@@ -13,22 +13,30 @@ Here's how you can use the Expo Play Audio Stream module for different scenarios
 ### Standard Recording and Playback
 
 ```javascript
-import { ExpoPlayAudioStream } from 'expo-audio-stream';
+import { ExpoPlayAudioStream, EncodingTypes, PlaybackModes } from 'expo-audio-stream';
 
-// Example of standard recording and playback
+// Example of standard recording and playback with specific encoding
 async function handleStandardRecording() {
   try {
-    // Set volume for playback
-    await ExpoPlayAudioStream.setVolume(0.8);
+    // Configure sound playback settings
+    await ExpoPlayAudioStream.setSoundConfig({
+      sampleRate: 44100,
+      playbackMode: PlaybackModes.REGULAR
+    });
 
     // Start recording with configuration
     const { recordingResult, subscription } = await ExpoPlayAudioStream.startRecording({
+      sampleRate: 48000,
+      channels: 1,
+      encoding: 'pcm_16bit',
+      interval: 250, // milliseconds
       onAudioStream: (event) => {
         console.log('Received audio stream:', {
           audioDataBase64: event.data,
           position: event.position,
           eventDataSize: event.eventDataSize,
-          totalSize: event.totalSize
+          totalSize: event.totalSize,
+          soundLevel: event.soundLevel // New property for audio level monitoring
         });
       }
     });
@@ -38,11 +46,9 @@ async function handleStandardRecording() {
       const recording = await ExpoPlayAudioStream.stopRecording();
       console.log('Recording stopped:', recording);
 
-      // Read the file from the fileUri and convert to base64
-
-      // Play the recorded audio
+      // Play the recorded audio with specific encoding format
       const turnId = 'example-turn-1';
-      await ExpoPlayAudioStream.playAudio(base64Content, turnId);
+      await ExpoPlayAudioStream.playAudio(base64Content, turnId, EncodingTypes.PCM_S16LE);
 
       // Clean up
       subscription?.remove();
@@ -57,6 +63,7 @@ async function handleStandardRecording() {
 const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (event) => {
   console.log('Audio event received:', {
     data: event.data,
+    soundLevel: event.soundLevel // Sound level can be used for visualization or voice detection
   });
 });
 // Don't forget to clean up when done
@@ -68,23 +75,31 @@ const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (even
 These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
 
 ```javascript
-import { ExpoPlayAudioStream } from 'expo-audio-stream';
+import { ExpoPlayAudioStream, EncodingTypes, PlaybackModes } from 'expo-audio-stream';
 
 // Example of simultaneous recording and playback with voice processing
 async function handleSimultaneousRecordAndPlay() {
   try {
+    // Configure sound playback with optimized voice processing settings
+    await ExpoPlayAudioStream.setSoundConfig({
+      sampleRate: 44100,
+      playbackMode: PlaybackModes.VOICE_PROCESSING
+    });
+
     // Start microphone with voice processing
     const { recordingResult, subscription } = await ExpoPlayAudioStream.startMicrophone({
+      enableProcessing: true,
       onAudioStream: (event) => {
         console.log('Received audio stream with voice processing:', {
           audioDataBase64: event.data,
+          soundLevel: event.soundLevel
         });
       }
     });
 
-    // Play audio while recording is active
+    // Play audio while recording is active, with specific encoding format
     const turnId = 'response-turn-1';
-    await ExpoPlayAudioStream.playSound(someAudioBase64, turnId);
+    await ExpoPlayAudioStream.playSound(someAudioBase64, turnId, EncodingTypes.PCM_F32LE);
 
     // Play a complete WAV file directly
     await ExpoPlayAudioStream.playWav(wavBase64Data);
@@ -125,13 +140,22 @@ The Expo Play Audio Stream module provides the following methods:
 
 - `stopRecording()`: Stops the current microphone recording. Returns a promise that resolves to the audio recording data. Throws an error if the recording fails to stop.
 
-- `playAudio(base64Chunk: string, turnId: string)`: Plays a base64 encoded audio chunk with the specified turn ID. Throws an error if the audio chunk fails to stream.
+- `playAudio(base64Chunk: string, turnId: string, encoding?: Encoding)`: Plays a base64 encoded audio chunk with the specified turn ID. The optional encoding parameter allows specifying the format of the audio data ('pcm_f32le' or 'pcm_s16le', defaults to 'pcm_s16le'). Throws an error if the audio chunk fails to stream.
 
 - `pauseAudio()`: Pauses the current audio playback. Throws an error if the audio playback fails to pause.
 
 - `stopAudio()`: Stops the currently playing audio. Throws an error if the audio fails to stop.
 
 - `clearPlaybackQueueByTurnId(turnId: string)`: Clears the playback queue for a specific turn ID. Throws an error if the playback queue fails to clear.
+
+- `setSoundConfig(config: SoundConfig)`: Sets the sound player configuration with options for sample rate and playback mode. The SoundConfig interface accepts:
+  - `sampleRate`: The sample rate for audio playback in Hz (16000, 44100, or 48000)
+  - `playbackMode`: The playback mode ('regular', 'voiceProcessing', or 'conversation')
+  - `useDefault`: When true, resets to default configuration regardless of other parameters
+
+  Default settings are:
+  - Android: sampleRate: 44100, playbackMode: 'regular'
+  - iOS: sampleRate: 44100.0, playbackMode: 'regular'
 
 ### Simultaneous Recording and Playback ⚠️ (iOS only)
 
@@ -141,7 +165,7 @@ These methods are specifically designed for scenarios where you need to record a
 
 - `stopMicrophone()`: Stops the current microphone streaming. Returns a promise that resolves to the audio recording data or null. Throws an error if the microphone streaming fails to stop.
 
-- `playSound(audio: string, turnId: string)`: Plays a sound while recording is active. Uses voice processing to prevent feedback. Throws an error if the sound fails to play.
+- `playSound(audio: string, turnId: string, encoding?: Encoding)`: Plays a sound while recording is active. Uses voice processing to prevent feedback. The optional encoding parameter allows specifying the format of the audio data ('pcm_f32le' or 'pcm_s16le', defaults to 'pcm_s16le'). Throws an error if the sound fails to play.
 
 - `stopSound()`: Stops the currently playing sound in simultaneous mode. Throws an error if the sound fails to stop.
 
@@ -153,6 +177,8 @@ These methods are specifically designed for scenarios where you need to record a
 
 - `playWav(wavBase64: string)`: Plays a WAV format audio file from base64 encoded data. Unlike playSound(), this method plays the audio directly without queueing. The audio data should be base64 encoded WAV format. Throws an error if the WAV audio fails to play.
 
+- `promptMicrophoneModes()`: Prompts the user to select the microphone mode (iOS specific feature).
+
 ### Event Subscriptions
 
 - `subscribeToAudioEvents(onMicrophoneStream: (event: AudioDataEvent) => Promise<void>)`: Subscribes to audio events emitted during recording/streaming. The callback receives an AudioDataEvent containing:
@@ -161,6 +187,7 @@ These methods are specifically designed for scenarios where you need to record a
   - `fileUri`: URI of the recording file
   - `eventDataSize`: Size of the current audio data chunk
   - `totalSize`: Total size of recorded audio so far
+  - `soundLevel`: Optional sound level measurement that can be used for visualization
   Returns a subscription that should be cleaned up when no longer needed.
 
 - `subscribeToSoundChunkPlayed(onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>)`: Subscribes to events emitted when a sound chunk has finished playing. The callback receives a payload indicating if this was the final chunk. Returns a subscription that should be cleaned up when no longer needed.
@@ -171,6 +198,15 @@ These methods are specifically designed for scenarios where you need to record a
   - `SoundStarted`: Emitted when sound playback begins
 
 Note: When playing audio, you can use the special turnId `"supspend-sound-events"` to suppress sound events for that particular playback. This is useful when you want to play audio without triggering the sound events.
+
+### Types
+
+- `Encoding`: Defines the audio encoding format, either 'pcm_f32le' (32-bit float) or 'pcm_s16le' (16-bit signed integer)
+- `EncodingTypes`: Constants for audio encoding formats (EncodingTypes.PCM_F32LE, EncodingTypes.PCM_S16LE)
+- `PlaybackMode`: Defines different playback modes ('regular', 'voiceProcessing', or 'conversation')
+- `PlaybackModes`: Constants for playback modes (PlaybackModes.REGULAR, PlaybackModes.VOICE_PROCESSING, PlaybackModes.CONVERSATION)
+- `SampleRate`: Supported sample rates (16000, 44100, or 48000 Hz)
+- `RecordingEncodingType`: Encoding type for recording ('pcm_32bit', 'pcm_16bit', or 'pcm_8bit')
 
 All methods are static and most return Promises that resolve when the operation is complete. Error handling is built into each method, with descriptive error messages if operations fail.
 

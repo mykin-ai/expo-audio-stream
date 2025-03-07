@@ -70,8 +70,16 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
             )
         }
 
-        AsyncFunction("playAudio") { chunk: String, turnId: String, promise: Promise ->
-            audioPlaybackManager.playAudio(chunk, turnId, promise)
+        AsyncFunction("playAudio") { chunk: String, turnId: String, encoding: String?, promise: Promise ->
+            val pcmEncoding = when (encoding) {
+                "pcm_f32le" -> PCMEncoding.PCM_F32LE
+                "pcm_s16le", null -> PCMEncoding.PCM_S16LE
+                else -> {
+                    Log.d(Constants.TAG, "Unsupported encoding: $encoding, defaulting to PCM_S16LE")
+                    PCMEncoding.PCM_S16LE
+                }
+            }
+            audioPlaybackManager.playAudio(chunk, turnId, promise, pcmEncoding)
         }
 
         AsyncFunction("clearPlaybackQueueByTurnId") { turnId: String, promise: Promise ->
@@ -95,8 +103,16 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
             audioRecorderManager.listAudioFiles(promise)
         }
 
-        AsyncFunction("playSound") { chunk: String, turnId: String, promise: Promise ->
-            audioPlaybackManager.playAudio(chunk, turnId, promise)
+        AsyncFunction("playSound") { chunk: String, turnId: String, encoding: String?, promise: Promise ->
+            val pcmEncoding = when (encoding) {
+                "pcm_f32le" -> PCMEncoding.PCM_F32LE
+                "pcm_s16le", null -> PCMEncoding.PCM_S16LE
+                else -> {
+                    Log.d(Constants.TAG, "Unsupported encoding: $encoding, defaulting to PCM_S16LE")
+                    PCMEncoding.PCM_S16LE
+                }
+            }
+            audioPlaybackManager.playAudio(chunk, turnId, promise, pcmEncoding)
         }
 
         AsyncFunction("playWav") { chunk: String, promise: Promise ->
@@ -122,6 +138,34 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
 
         AsyncFunction("stopMicrophone") { promise: Promise ->
             audioRecorderManager.stopRecording(promise)
+        }
+
+        AsyncFunction("setSoundConfig") { config: Map<String, Any?>, promise: Promise ->
+            val useDefault = config["useDefault"] as? Boolean ?: false
+            
+            if (useDefault) {
+                // Reset to default configuration
+                Log.d(Constants.TAG, "Resetting sound configuration to default values")
+                audioPlaybackManager.resetConfigToDefault(promise)
+            } else {
+                // Extract configuration values
+                val sampleRate = (config["sampleRate"] as? Number)?.toInt() ?: 16000
+                val playbackModeString = config["playbackMode"] as? String ?: "regular"
+                
+                // Convert string playback mode to enum
+                val playbackMode = when (playbackModeString) {
+                    "voiceProcessing" -> PlaybackMode.VOICE_PROCESSING
+                    "conversation" -> PlaybackMode.CONVERSATION
+                    else -> PlaybackMode.REGULAR
+                }
+                
+                // Create a new SoundConfig object
+                val soundConfig = SoundConfig(sampleRate = sampleRate, playbackMode = playbackMode)
+                
+                // Update the sound player configuration
+                Log.d(Constants.TAG, "Setting sound configuration - sampleRate: $sampleRate, playbackMode: $playbackModeString")
+                audioPlaybackManager.updateConfig(soundConfig, promise)
+            }
         }
 
     }
