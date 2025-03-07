@@ -194,45 +194,67 @@ class AudioSessionManager {
         return "Sample Rate: \(sampleRate), Channels: \(channelCount), Format: \(bitDepth)"
     }
     
-    func playAudio(_ chunk: String, _ turnId: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
-        guard let audioData = Data(base64Encoded: chunk),
-              let pcmData = AudioUtils.removeRIFFHeaderIfNeeded(from: audioData),
-              let pcmBuffer = AudioUtils.convertPCMDataToBuffer(pcmData, audioFormat: self.audioFormat!) else {
-            rejecter("ERR_DECODE_AUDIO", "Failed to process audio chunk", nil)
-            return
+    /// Processes audio chunk based on common format
+    /// - Parameters:
+    ///   - base64String: Base64 encoded audio data
+    ///   - commonFormat: The common format of the audio data
+    /// - Returns: Processed audio buffer or nil if processing fails
+    /// - Throws: Error if format is unsupported
+    private func processAudioChunk(_ base64String: String, commonFormat: AVAudioCommonFormat) throws -> AVAudioPCMBuffer? {
+        switch commonFormat {
+        case .pcmFormatFloat32:
+            return AudioUtils.processFloat32LEAudioChunk(base64String, audioFormat: self.audioFormat!)
+        case .pcmFormatInt16:
+            return AudioUtils.processPCM16LEAudioChunk(base64String, audioFormat: self.audioFormat!)
+        default:
+            Logger.debug("[AudioSessionManager] Unsupported audio format: \(commonFormat)")
+            throw SoundPlayerError.unsupportedFormat
         }
-
-        let bufferTuple = (buffer: pcmBuffer, promise: resolver, turnId: turnId)
-        bufferQueue.append(bufferTuple)
-        
-        if self.audioPlayerNode == nil {
-            Logger.debug("Player node is destroyed starting new one")
-            do {
-                try self.restartAudioSessionForPlayback()
-            } catch {
-                Logger.debug("Failded to restart Audio Session")
-                rejecter("ERR_START_PLAYBACK_SESSION", "Failed to restart to playback session", nil)
+    }
+    
+    func playAudio(_ chunk: String, _ turnId: String, commonFormat: AVAudioCommonFormat = .pcmFormatInt16, resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock) {
+        do {
+            guard let buffer = try processAudioChunk(chunk, commonFormat: commonFormat) else {
+                Logger.debug("[AudioSessionManager] Failed to process audio chunk")
+                rejecter("ERR_DECODE_AUDIO", "Failed to process audio chunk", nil)
                 return
             }
-        }
-        
-        do {
-            Logger.debug("Engine is Running \(self.audioEngine.isRunning)")
-            if !self.audioEngine.isRunning {
-                Logger.debug("Starting Engine Again")
-                try self.audioEngine.start()
+            
+            let bufferTuple = (buffer: buffer, promise: resolver, turnId: turnId)
+            bufferQueue.append(bufferTuple)
+            
+            if self.audioPlayerNode == nil {
+                Logger.debug("Player node is destroyed starting new one")
+                do {
+                    try self.restartAudioSessionForPlayback()
+                } catch {
+                    Logger.debug("Failed to restart Audio Session")
+                    rejecter("ERR_START_PLAYBACK_SESSION", "Failed to restart to playback session", nil)
+                    return
+                }
             }
             
-            Logger.debug("Player node is playing \(self.audioPlayerNode!.isPlaying)")
-            if let playerNode = self.audioPlayerNode, !playerNode.isPlaying {
-                Logger.debug("Starting Player")
-                playerNode.play()
+            do {
+                Logger.debug("Engine is Running \(self.audioEngine.isRunning)")
+                if !self.audioEngine.isRunning {
+                    Logger.debug("Starting Engine Again")
+                    try self.audioEngine.start()
+                }
+                
+                Logger.debug("Player node is playing \(self.audioPlayerNode!.isPlaying)")
+                if let playerNode = self.audioPlayerNode, !playerNode.isPlaying {
+                    Logger.debug("Starting Player")
+                    playerNode.play()
+                }
+                
+                self.scheduleNextBuffer()
+            } catch {
+                Logger.debug("Error to start playback audio chunk \(error.localizedDescription)")
+                rejecter("ERR_SCHEDULE_BUFFER", "Schedule playback failed: \(error.localizedDescription)", nil)
             }
-            
-            self.scheduleNextBuffer()
         } catch {
-            Logger.debug("Error to start playback audio chunk \(error.localizedDescription)")
-            rejecter("ERR_SCHEDULE_BUFFER", "Schedule playback failed: \(error.localizedDescription)", nil)
+            Logger.debug("[AudioSessionManager] Error processing audio: \(error.localizedDescription)")
+            rejecter("ERR_PROCESS_AUDIO", "Failed to process audio: \(error.localizedDescription)", nil)
         }
     }
     

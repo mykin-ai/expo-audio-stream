@@ -2,12 +2,6 @@ import AVFoundation
 import ExpoModulesCore
 
 
-public enum SoundPlayerError: Error {
-    case invalidBase64String
-    case couldNotPlayAudio
-    case decodeError(details: String)
-}
-
 class Microphone {
     weak var delegate: MicrophoneDataDelegate?
     
@@ -125,12 +119,13 @@ class Microphone {
         }
     }
     
-    public func stopRecording() {
+    public func stopRecording(resolver promise: Promise) {
         guard self.isRecording else { return }
         self.isRecording = false
         self.isVoiceProcessingEnabled = false
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
+        promise.resolve(nil)
     }
     
     /// Processes the audio buffer and writes data to the file. Also handles audio processing if enabled.
