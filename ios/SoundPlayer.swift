@@ -125,6 +125,24 @@ class SoundPlayer {
         try updateConfig(SoundConfig.defaultConfig)
     }
     
+    /// Enables voice processing on the audio engine
+    /// - Throws: Error if enabling voice processing fails
+    private func enableVoiceProcessing() throws {
+        guard let engine = self.audioEngine else { return }
+        try engine.inputNode.setVoiceProcessingEnabled(true)
+        try engine.outputNode.setVoiceProcessingEnabled(true)
+        Logger.debug("[SoundPlayer] Voice processing enabled")
+    }
+    
+    /// Disables voice processing on the audio engine
+    /// - Throws: Error if disabling voice processing fails
+    private func disableVoiceProcessing() throws {
+        guard let engine = self.audioEngine else { return }
+        try engine.inputNode.setVoiceProcessingEnabled(false)
+        try engine.outputNode.setVoiceProcessingEnabled(false)
+        Logger.debug("[SoundPlayer] Voice processing disabled")
+    }
+    
     /// Sets up the audio engine and player node if not already configured
     /// - Throws: Error if audio engine setup fails
     public func ensureAudioEngineIsSetup() throws {
@@ -145,13 +163,12 @@ class SoundPlayer {
             audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: self.audioPlaybackFormat)
             audioEngine.connect(audioEngine.mainMixerNode, to: audioEngine.outputNode, format: self.audioPlaybackFormat)
             
-            // Enable voice processing based on playback mode
-            if config.playbackMode == .voiceProcessing || config.playbackMode == .conversation {
+            // Only enable voice processing immediately for conversation mode
+            // For voice processing mode, we'll enable it only during actual playback
+            if config.playbackMode == .conversation {
                 try audioEngine.inputNode.setVoiceProcessingEnabled(true)
                 try audioEngine.outputNode.setVoiceProcessingEnabled(true)
-                Logger.debug("[SoundPlayer] Voice processing enabled for \(config.playbackMode) mode")
-            } else {
-                Logger.debug("[SoundPlayer] Voice processing disabled for regular mode")
+                Logger.debug("[SoundPlayer] Voice processing immediately enabled for conversation mode (stays disabled for regular mode, and enables only during playback for voice processing mode)")
             }
         }
         self.isAudioEngineIsSetup = true
@@ -188,6 +205,16 @@ class SoundPlayer {
         } else {
             Logger.debug("Player is not playing")
         }
+        
+        // Stop the engine and disable voice processing if in voice processing mode
+        if config.playbackMode == .voiceProcessing {
+            if let engine = self.audioEngine, engine.isRunning {
+                engine.stop()
+                try? self.disableVoiceProcessing()
+                self.isAudioEngineIsSetup = false
+            }
+        }
+        
         self.segmentsLeftToPlay = 0
         promise.resolve(nil)
     }
@@ -240,6 +267,33 @@ class SoundPlayer {
         }
     }
     
+    /// Sets up voice processing for playback by stopping the engine, enabling voice processing, and then restarting the engine
+    /// - Returns: True if voice processing was successfully enabled, false otherwise
+    private func setupVoiceProcessingForPlayback() -> Bool {
+        do {
+            Logger.debug("[SoundPlayer] Setting up voice processing for playback")
+            
+            if let engine = self.audioEngine, engine.isRunning {
+                // Stop the engine first
+                Logger.debug("[SoundPlayer] Stopping engine to enable voice processing")
+                engine.stop()
+                
+                // Enable voice processing
+                try enableVoiceProcessing()
+                
+                // Restart the engine
+                Logger.debug("[SoundPlayer] Restarting engine after enabling voice processing")
+                try engine.start()
+                return true
+            }
+        } catch {
+            Logger.debug("[SoundPlayer] Failed to setup voice processing: \(error.localizedDescription)")
+            // Try to restart the engine if we failed
+            try? self.audioEngine?.start()
+        }
+        return false
+    }
+    
     /// Plays an audio chunk from base64 encoded string
     /// - Parameters:
     ///   - base64String: Base64 encoded audio data
@@ -269,6 +323,16 @@ class SoundPlayer {
             guard let buffer = try processAudioChunk(base64String, commonFormat: commonFormat) else {
                 Logger.debug("[SoundPlayer] Failed to process audio chunk")
                 throw SoundPlayerError.invalidBase64String
+            }
+            
+            // Enable voice processing for voice processing mode just before we start playback
+            let isFirstChunk = self.audioQueue.isEmpty && self.segmentsLeftToPlay == 0
+            if isFirstChunk && config.playbackMode == .voiceProcessing {
+                // For voice processing, we need to stop the engine first, then enable voice processing
+                let success = setupVoiceProcessingForPlayback()
+                if !success {
+                    Logger.debug("[SoundPlayer] Continuing without voice processing")
+                }
             }
                         
             let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
@@ -330,11 +394,13 @@ class SoundPlayer {
                     promise(nil)
                     
                     // If this is the final segment and we're in voiceProcessing mode,
-                    // stop the audio engine to clean up resources
+                    // stop the engine and disable voice processing
                     if isFinalSegment && self.config.playbackMode == .voiceProcessing {
                         Logger.debug("[SoundPlayer] Final segment in voice processing mode, stopping engine")
                         if let engine = self.audioEngine, engine.isRunning {
                             engine.stop()
+                            // Disable voice processing after stopping the engine
+                            try? self.disableVoiceProcessing()
                             self.isAudioEngineIsSetup = false
                         }
                     }
