@@ -28,17 +28,45 @@ class Microphone {
 
     private var inittedAudioSession = false
     private var isRecording: Bool = false
+    private var isSilent: Bool = false
     
-    private func ensureInittedAudioSession() throws {
-         if self.inittedAudioSession { return }
-         let audioSession = AVAudioSession.sharedInstance()
-         try audioSession.setCategory(
-             .playAndRecord, mode: .voiceChat,
-             options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
-         try audioSession.setActive(true)
-         inittedAudioSession = true
-     }
+    init() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
     
+    /// Handles audio route changes (e.g. headphones connected/disconnected)
+    /// - Parameter notification: The notification object containing route change information
+    @objc private func handleRouteChange(notification: Notification) {
+        guard let info = notification.userInfo,
+              let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return
+        }
+        
+        Logger.debug("[Microphone] Route is changed \(reason)")
+
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable:
+            if isRecording {
+                stopRecording(resolver: nil)
+                startRecording(settings: self.recordingSettings!, intervalMilliseconds: 100)
+            }
+        case .categoryChange:
+            Logger.debug("[Microphone] Audio Session category changed")
+        default:
+            break
+        }
+    }
+    
+    func toggleSilence() {
+        Logger.debug("[Microphone] toogleSilence")
+        self.isSilent = !self.isSilent
+    }
     
     func startRecording(settings: RecordingSettings, intervalMilliseconds: Int) -> StartRecordingResult? {
         guard !isRecording else {
@@ -119,13 +147,15 @@ class Microphone {
         }
     }
     
-    public func stopRecording(resolver promise: Promise) {
+    public func stopRecording(resolver promise: Promise?) {
         guard self.isRecording else { return }
         self.isRecording = false
         self.isVoiceProcessingEnabled = false
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
-        promise.resolve(nil)
+        if let promiseResolver = promise {
+            promiseResolver.resolve(nil)
+        }
     }
     
     /// Processes the audio buffer and writes data to the file. Also handles audio processing if enabled.
@@ -135,6 +165,7 @@ class Microphone {
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         let targetSampleRate = recordingSettings?.desiredSampleRate ?? buffer.format.sampleRate
         let finalBuffer: AVAudioPCMBuffer
+               
         
         if buffer.format.sampleRate != targetSampleRate {
             // Resample the audio buffer if the target sample rate is different from the input sample rate
@@ -167,8 +198,9 @@ class Microphone {
             Logger.debug("Buffer data is nil.")
             return
         }
-        var data = Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
-        
+        let data = isSilent
+            ? Data(repeating: 0, count: Int(audioData.mDataByteSize) * Int(finalBuffer.format.streamDescription.pointee.mBytesPerFrame))
+            : Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
         // Accumulate new data
         accumulatedData.append(data)
         totalDataSize += Int64(data.count)

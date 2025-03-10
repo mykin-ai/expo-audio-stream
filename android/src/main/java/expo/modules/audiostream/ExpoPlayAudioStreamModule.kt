@@ -140,6 +140,10 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
             audioRecorderManager.stopRecording(promise)
         }
 
+        Function("toggleSilence") {
+            // not applicable for android
+        }
+
         AsyncFunction("setSoundConfig") { config: Map<String, Any?>, promise: Promise ->
             val useDefault = config["useDefault"] as? Boolean ?: false
             

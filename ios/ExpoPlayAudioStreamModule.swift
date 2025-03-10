@@ -5,6 +5,7 @@ import ExpoModulesCore
 let audioDataEvent: String = "AudioData"
 let soundIsPlayedEvent: String = "SoundChunkPlayed"
 let soundIsStartedEvent: String = "SoundStarted"
+let deviceReconnectedEvent: String = "DeviceReconnected"
 
 
 public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, MicrophoneDataDelegate, SoundPlayerDelegate {
@@ -42,7 +43,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         Name("ExpoPlayAudioStream")
         
         // Defines event names that the module can send to JavaScript.
-        Events([audioDataEvent, soundIsPlayedEvent, soundIsStartedEvent])
+        Events([audioDataEvent, soundIsPlayedEvent, soundIsStartedEvent, deviceReconnectedEvent])
         
         Function("destroy") {
             // Now we can properly reset all instances
@@ -299,6 +300,10 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             microphone.stopRecording(resolver: promise)
         }
         
+        Function("toggleSilence") {
+            microphone.toggleSilence()
+        }
+        
         /// Sets the sound player configuration
         /// - Parameters:
         ///   - config: A dictionary containing configuration options:
@@ -492,6 +497,22 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         ]
         // Emit the event to JavaScript
         sendEvent(audioDataEvent, eventBody)
+    }
+    
+    func onDeviceReconnected(_ reason: AVAudioSession.RouteChangeReason) {
+        let reasonString: String
+        switch reason {
+        case .newDeviceAvailable:
+            reasonString = "newDeviceAvailable"
+        case .oldDeviceUnavailable:
+            reasonString = "oldDeviceUnavailable"
+        case .unknown, .categoryChange, .override, .wakeFromSleep, .noSuitableRouteForCategory, .routeConfigurationChange:
+            reasonString = "unknown"
+        @unknown default:
+            reasonString = "unknown"
+        }
+        
+        sendEvent(deviceReconnectedEvent, ["reason": reasonString])
     }
     
     func onSoundChunkPlayed(_ isFinal: Bool) {
