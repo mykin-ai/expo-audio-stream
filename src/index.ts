@@ -19,6 +19,8 @@ import {
   SoundChunkPlayedEventPayload,
   AudioEvents,
   subscribeToEvent,
+  DeviceReconnectedReason,
+  DeviceReconnectedEventPayload,
 } from "./events";
 
 const SuspendSoundEventTurnId = "suspend-sound-events";
@@ -407,11 +409,23 @@ export class ExpoPlayAudioStream {
   static promptMicrophoneModes() {
     ExpoPlayAudioStreamModule.promptMicrophoneModes();
   }
+
+  /**
+   * Toggles the silence state of the microphone.
+   * @returns {Promise<void>}
+   * @throws {Error} If the microphone fails to toggle silence.
+   */
+  static toggleSilence() {
+    ExpoPlayAudioStreamModule.toggleSilence();
+  }
+
 }
 
 export {
   AudioDataEvent,
   SoundChunkPlayedEventPayload,
+  DeviceReconnectedReason,
+  DeviceReconnectedEventPayload,
   AudioRecording,
   RecordingConfig,
   StartRecordingResult,

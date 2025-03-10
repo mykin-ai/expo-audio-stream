@@ -58,6 +58,7 @@ class SoundPlayer {
             } catch {
                 Logger.debug("[SoundPlayer] Failed to setup audio engine: \(error.localizedDescription)")
             }
+            self.delegate?.onDeviceReconnected(reason)
         case .categoryChange:
             Logger.debug("[SoundPlayer] Audio Session category changed")
         default:

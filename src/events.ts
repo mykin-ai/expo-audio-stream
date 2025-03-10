@@ -28,10 +28,25 @@ export type SoundChunkPlayedEventPayload = {
     isFinal: boolean
 }
 
+export const DeviceReconnectedReasons = {
+    newDeviceAvailable: 'newDeviceAvailable',
+    oldDeviceUnavailable: 'oldDeviceUnavailable',
+    unknown: 'unknown',
+} as const
+
+export type DeviceReconnectedReason = {
+    reason: typeof DeviceReconnectedReasons[keyof typeof DeviceReconnectedReasons]
+}
+
+export type DeviceReconnectedEventPayload = {
+    reason: DeviceReconnectedReason
+}
+
 export const AudioEvents = {
     AudioData: 'AudioData',
     SoundChunkPlayed: 'SoundChunkPlayed',
     SoundStarted: 'SoundStarted',
+    DeviceReconnected: 'DeviceReconnected',
 }
 
 export function addAudioEventListener(
