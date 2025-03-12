@@ -68,7 +68,7 @@ class Microphone {
     }
     
     func toggleSilence() {
-        Logger.debug("[Microphone] toogleSilence")
+        Logger.debug("[Microphone] toggleSilence")
         self.isSilent = !self.isSilent
         if self.isSilent {
             self.stopRecording(resolver: nil)
