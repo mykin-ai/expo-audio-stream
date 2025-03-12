@@ -8,8 +8,7 @@ import ExpoPlayAudioStreamModule from './ExpoPlayAudioStreamModule'
 
 const emitter = new EventEmitter(ExpoPlayAudioStreamModule)
 
-emitter.addListener('SoundChunkPlayed', (event: SoundChunkPlayedEventPayload) => {
-})
+emitter.addListener('SoundChunkPlayed', (event: SoundChunkPlayedEventPayload) => {})
 
 export interface AudioEventPayload {
     encoded?: string
@@ -34,9 +33,7 @@ export const DeviceReconnectedReasons = {
     unknown: 'unknown',
 } as const
 
-export type DeviceReconnectedReason = {
-    reason: typeof DeviceReconnectedReasons[keyof typeof DeviceReconnectedReasons]
-}
+export type DeviceReconnectedReason = (typeof DeviceReconnectedReasons)[keyof typeof DeviceReconnectedReasons]
 
 export type DeviceReconnectedEventPayload = {
     reason: DeviceReconnectedReason

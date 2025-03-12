@@ -54,7 +54,11 @@ class Microphone {
         case .newDeviceAvailable, .oldDeviceUnavailable:
             if isRecording {
                 stopRecording(resolver: nil)
-                startRecording(settings: self.recordingSettings!, intervalMilliseconds: 100)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self, let settings = self.recordingSettings else { return }
+                    
+                    _ = startRecording(settings: self.recordingSettings!, intervalMilliseconds: 100)
+                }
             }
         case .categoryChange:
             Logger.debug("[Microphone] Audio Session category changed")
@@ -64,8 +68,17 @@ class Microphone {
     }
     
     func toggleSilence() {
-        Logger.debug("[Microphone] toogleSilence")
+        Logger.debug("[Microphone] toggleSilence")
         self.isSilent = !self.isSilent
+        if self.isSilent {
+            self.stopRecording(resolver: nil)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self, let settings = self.recordingSettings else { return }
+                
+                _ = startRecording(settings: self.recordingSettings!, intervalMilliseconds: 100)
+            }
+        }
     }
     
     func startRecording(settings: RecordingSettings, intervalMilliseconds: Int) -> StartRecordingResult? {
@@ -148,7 +161,12 @@ class Microphone {
     }
     
     public func stopRecording(resolver promise: Promise?) {
-        guard self.isRecording else { return }
+        guard self.isRecording else {
+            if let promiseResolver = promise {
+                promiseResolver.resolve(nil)
+            }
+            return
+        }
         self.isRecording = false
         self.isVoiceProcessingEnabled = false
         audioEngine.stop()
@@ -172,8 +190,6 @@ class Microphone {
             if let resampledBuffer = AudioUtils.resampleAudioBuffer(buffer, from: buffer.format.sampleRate, to: targetSampleRate) {
                 finalBuffer = resampledBuffer
             } else {
-                Logger.debug("Fallback to AVAudioConverter. Converting from \(buffer.format.sampleRate) Hz to \(targetSampleRate) Hz")
-                
                 if let convertedBuffer = AudioUtils.tryConvertToFormat(
                     inputBuffer: buffer,
                     desiredSampleRate: targetSampleRate,
@@ -198,9 +214,8 @@ class Microphone {
             Logger.debug("Buffer data is nil.")
             return
         }
-        let data = isSilent
-            ? Data(repeating: 0, count: Int(audioData.mDataByteSize) * Int(finalBuffer.format.streamDescription.pointee.mBytesPerFrame))
-            : Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
+        
+        let data = Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
         // Accumulate new data
         accumulatedData.append(data)
         totalDataSize += Int64(data.count)
@@ -208,7 +223,7 @@ class Microphone {
         let currentTime = Date()
         if let lastEmissionTime = lastEmissionTime, currentTime.timeIntervalSince(lastEmissionTime) >= emissionInterval {
             if let startTime = startTime {
-                let recordingTime = currentTime.timeIntervalSince(startTime)
+                _ = currentTime.timeIntervalSince(startTime)
                 // Copy accumulated data for processing
                 let dataToProcess = accumulatedData
                 
