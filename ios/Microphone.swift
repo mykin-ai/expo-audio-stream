@@ -209,7 +209,7 @@ class Microphone {
         //let data = Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
         let data = isSilent
                     ? Data(repeating: 0, count:
-                            1024 * Int(finalBuffer.format.streamDescription.pointee.mBytesPerFrame))
+                            Int(finalBuffer.frameCapacity) * Int(finalBuffer.format.streamDescription.pointee.mBytesPerFrame))
                     : Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
         // Accumulate new data
         accumulatedData.append(data)
