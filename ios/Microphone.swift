@@ -70,15 +70,6 @@ class Microphone {
     func toggleSilence() {
         Logger.debug("[Microphone] toggleSilence")
         self.isSilent = !self.isSilent
-        if self.isSilent {
-            self.stopRecording(resolver: nil)
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self = self, let settings = self.recordingSettings else { return }
-                
-                _ = startRecording(settings: self.recordingSettings!, intervalMilliseconds: 100)
-            }
-        }
     }
     
     func startRecording(settings: RecordingSettings, intervalMilliseconds: Int) -> StartRecordingResult? {
@@ -215,7 +206,11 @@ class Microphone {
             return
         }
         
-        let data = Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
+        //let data = Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
+        let data = isSilent
+                    ? Data(repeating: 0, count:
+                            1024 * Int(finalBuffer.format.streamDescription.pointee.mBytesPerFrame))
+                    : Data(bytes: bufferData, count: Int(audioData.mDataByteSize))
         // Accumulate new data
         accumulatedData.append(data)
         totalDataSize += Int64(data.count)
