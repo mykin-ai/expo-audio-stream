@@ -214,9 +214,18 @@ class AudioPlaybackManager() {
 
     fun pausePlayback(promise: Promise? = null, isFlushAudioTrack: Boolean = false) {
         try {
-            audioTrack.pause()
-            if (isFlushAudioTrack) {
-                audioTrack.flush()
+            if (::audioTrack.isInitialized && audioTrack.state != AudioTrack.STATE_UNINITIALIZED) {
+                audioTrack.pause()
+                if (isFlushAudioTrack) {
+                    try {
+                        audioTrack.flush()
+                    } catch (e: Exception) {
+                        Log.e("ExpoPlayStreamModule", "Error flushing AudioTrack: ${e.message}", e)
+                        // Don't rethrow - continue with playback state changes
+                    }
+                }
+            } else {
+                Log.d("ExpoPlayStreamModule", "AudioTrack not initialized or in invalid state, skipping pause/flush")
             }
             isPlaying = false
             currentPlaybackJob?.cancel()
@@ -229,12 +238,16 @@ class AudioPlaybackManager() {
     fun startPlayback(promise: Promise? = null) {
         try {
             if (!isPlaying) {
-                audioTrack.play()
-                isPlaying = true
-                Log.d("ExpoPlayStreamModule", "Starting Playback Loop")
-                startPlaybackLoop()
-                Log.d("ExpoPlayStreamModule", "Ensure processing Loop Started in startPlayback")
-                ensureProcessingLoopStarted()
+                if (::audioTrack.isInitialized && audioTrack.state != AudioTrack.STATE_UNINITIALIZED) {
+                    audioTrack.play()
+                    isPlaying = true
+                    Log.d("ExpoPlayStreamModule", "Starting Playback Loop")
+                    startPlaybackLoop()
+                    Log.d("ExpoPlayStreamModule", "Ensure processing Loop Started in startPlayback")
+                    ensureProcessingLoopStarted()
+                } else {
+                    throw IllegalStateException("AudioTrack not initialized or in invalid state")
+                }
             }
             promise?.resolve(null)
         } catch (e: Exception) {
@@ -254,9 +267,23 @@ class AudioPlaybackManager() {
             try {
 
                 Log.d("ExpoPlayStreamModule", "Stopping audioTrack")
-                audioTrack.stop()
-                Log.d("ExpoPlayStreamModule", "Flushing audioTrack")
-                audioTrack.flush()
+                if (::audioTrack.isInitialized && audioTrack.state != AudioTrack.STATE_UNINITIALIZED) {
+                    try {
+                        audioTrack.stop()
+                        Log.d("ExpoPlayStreamModule", "Flushing audioTrack")
+                        try {
+                            audioTrack.flush()
+                        } catch (e: Exception) {
+                            Log.e("ExpoPlayStreamModule", "Error flushing AudioTrack: ${e.message}", e)
+                            // Continue with other cleanup operations
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ExpoPlayStreamModule", "Error stopping AudioTrack: ${e.message}", e)
+                        // Continue with other cleanup operations
+                    }
+                } else {
+                    Log.d("ExpoPlayStreamModule", "AudioTrack not initialized or in invalid state, skipping stop/flush")
+                }
                 // Safely cancel jobs
                 if (currentPlaybackJob != null) {
                     Log.d("ExpoPlayStreamModule", "Cancelling currentPlaybackJob")
@@ -488,8 +515,22 @@ class AudioPlaybackManager() {
             
             try {
                 // Pause and flush audio track
-                audioTrack.pause()
-                audioTrack.flush()
+                if (::audioTrack.isInitialized && audioTrack.state != AudioTrack.STATE_UNINITIALIZED) {
+                    try {
+                        audioTrack.pause()
+                        try {
+                            audioTrack.flush()
+                        } catch (e: Exception) {
+                            Log.e("ExpoPlayStreamModule", "Error flushing AudioTrack in pauseAudioAndJobs: ${e.message}", e)
+                            // Continue with other operations
+                        }
+                        Log.d("ExpoPlayStreamModule", "Audio paused, playback job left running")
+                    } catch (e: Exception) {
+                        Log.e("ExpoPlayStreamModule", "Error pausing AudioTrack: ${e.message}", e)
+                    }
+                } else {
+                    Log.d("ExpoPlayStreamModule", "AudioTrack not initialized or in invalid state, skipping pause/flush")
+                }
                 
                 // Update state
                 isPlaying = false
@@ -497,7 +538,6 @@ class AudioPlaybackManager() {
                 // Note: We don't cancel any jobs anymore
                 // The playback loop will continue running but won't process chunks due to isPlaying being false
                 // This avoids any issues with channels being closed when cancelling jobs
-                Log.d("ExpoPlayStreamModule", "Audio paused, playback job left running")
             } catch (e: Exception) {
                 Log.e("ExpoPlayStreamModule", "Error pausing AudioTrack: ${e.message}", e)
             }
@@ -507,7 +547,9 @@ class AudioPlaybackManager() {
         if (::audioTrack.isInitialized) {
             try {
                 Log.d("ExpoPlayStreamModule", "Releasing AudioTrack")
-                audioTrack.release()
+                if (audioTrack.state != AudioTrack.STATE_UNINITIALIZED) {
+                    audioTrack.release()
+                }
             } catch (e: Exception) {
                 Log.e("ExpoPlayStreamModule", "Error releasing AudioTrack: ${e.message}", e)
             }
@@ -522,8 +564,19 @@ class AudioPlaybackManager() {
             Log.d("ExpoPlayStreamModule", "Restarting playback")
             
             // Start AudioTrack
-            audioTrack.play()
-            isPlaying = true
+            if (::audioTrack.isInitialized && audioTrack.state != AudioTrack.STATE_UNINITIALIZED) {
+                try {
+                    audioTrack.play()
+                    isPlaying = true
+                } catch (e: Exception) {
+                    Log.e("ExpoPlayStreamModule", "Error starting AudioTrack: ${e.message}", e)
+                    isPlaying = false
+                    return
+                }
+            } else {
+                Log.e("ExpoPlayStreamModule", "AudioTrack not initialized or in invalid state, cannot restart playback")
+                return
+            }
             
             // The playback loop is already running, we just need to set isPlaying to true
             // Only start a new loop if the current one doesn't exist

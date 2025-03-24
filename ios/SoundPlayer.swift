@@ -129,19 +129,85 @@ class SoundPlayer {
     /// Enables voice processing on the audio engine
     /// - Throws: Error if enabling voice processing fails
     private func enableVoiceProcessing() throws {
-        guard let engine = self.audioEngine else { return }
-        try engine.inputNode.setVoiceProcessingEnabled(true)
-        try engine.outputNode.setVoiceProcessingEnabled(true)
-        Logger.debug("[SoundPlayer] Voice processing enabled")
+        guard let engine = self.audioEngine else { 
+            Logger.debug("[SoundPlayer] No audio engine available")
+            return 
+        }
+        
+        // Check current state to avoid redundant calls
+        let inputEnabled = engine.inputNode.isVoiceProcessingEnabled
+        let outputEnabled = engine.outputNode.isVoiceProcessingEnabled
+        
+        var hasChanges = false
+        
+        // Only enable if not already enabled
+        if !inputEnabled {
+            do {
+                try engine.inputNode.setVoiceProcessingEnabled(true)
+                hasChanges = true
+            } catch {
+                Logger.debug("[SoundPlayer] Failed to enable voice processing on input node: \(error)")
+                // Continue with output node setup despite this error
+            }
+        }
+        
+        if !outputEnabled {
+            do {
+                try engine.outputNode.setVoiceProcessingEnabled(true)
+                hasChanges = true
+            } catch {
+                Logger.debug("[SoundPlayer] Failed to enable voice processing on output node: \(error)")
+                // This error isn't fatal, so we'll continue
+            }
+        }
+        
+        if hasChanges {
+            Logger.debug("[SoundPlayer] Voice processing enabled")
+        } else {
+            Logger.debug("[SoundPlayer] Voice processing was already enabled")
+        }
     }
     
     /// Disables voice processing on the audio engine
     /// - Throws: Error if disabling voice processing fails
     private func disableVoiceProcessing() throws {
-        guard let engine = self.audioEngine else { return }
-        try engine.inputNode.setVoiceProcessingEnabled(false)
-        try engine.outputNode.setVoiceProcessingEnabled(false)
-        Logger.debug("[SoundPlayer] Voice processing disabled")
+        guard let engine = self.audioEngine else { 
+            Logger.debug("[SoundPlayer] No audio engine available")
+            return 
+        }
+        
+        // Check if voice processing is enabled before attempting to disable
+        let inputEnabled = engine.inputNode.isVoiceProcessingEnabled
+        let outputEnabled = engine.outputNode.isVoiceProcessingEnabled
+        
+        var hasChanges = false
+        
+        // Only disable if currently enabled
+        if inputEnabled {
+            do {
+                try engine.inputNode.setVoiceProcessingEnabled(false)
+                hasChanges = true
+            } catch {
+                Logger.debug("[SoundPlayer] Failed to disable voice processing on input node: \(error)")
+                // Continue with output node
+            }
+        }
+        
+        if outputEnabled {
+            do {
+                try engine.outputNode.setVoiceProcessingEnabled(false)
+                hasChanges = true
+            } catch {
+                Logger.debug("[SoundPlayer] Failed to disable voice processing on output node: \(error)")
+                // This error isn't fatal
+            }
+        }
+        
+        if hasChanges {
+            Logger.debug("[SoundPlayer] Voice processing disabled")
+        } else {
+            Logger.debug("[SoundPlayer] Voice processing was already disabled")
+        }
     }
     
     /// Sets up the audio engine and player node if not already configured
@@ -274,19 +340,62 @@ class SoundPlayer {
         do {
             Logger.debug("[SoundPlayer] Setting up voice processing for playback")
             
-            if let engine = self.audioEngine, engine.isRunning {
-                // Stop the engine first
+            guard let engine = self.audioEngine else {
+                Logger.debug("[SoundPlayer] No audio engine available")
+                return false
+            }
+            
+            // If the engine is already running, we need to stop it completely first
+            if engine.isRunning {
                 Logger.debug("[SoundPlayer] Stopping engine to enable voice processing")
                 engine.stop()
                 
-                // Enable voice processing
-                try enableVoiceProcessing()
+                // Small delay via dispatch instead of thread sleep
+                let delayGroup = DispatchGroup()
+                delayGroup.enter()
                 
-                // Restart the engine
-                Logger.debug("[SoundPlayer] Restarting engine after enabling voice processing")
-                try engine.start()
-                return true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                    delayGroup.leave()
+                }
+                
+                // Wait for the delay to complete - this is still synchronous but doesn't block the thread
+                _ = delayGroup.wait(timeout: .now() + 0.02)
             }
+            
+            // Use the centralized helper method to enable voice processing
+            try enableVoiceProcessing()
+            
+            // Restart the engine
+            if !engine.isRunning {
+                Logger.debug("[SoundPlayer] Restarting engine after enabling voice processing")
+                do {
+                    try engine.start()
+                    return true
+                } catch {
+                    Logger.debug("[SoundPlayer] Failed to restart engine: \(error.localizedDescription)")
+                    
+                    // Use dispatch for the retry delay instead of thread sleep
+                    let retryGroup = DispatchGroup()
+                    retryGroup.enter()
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        retryGroup.leave()
+                    }
+                    
+                    // Wait for the delay to complete
+                    _ = retryGroup.wait(timeout: .now() + 0.1)
+                    
+                    // Second try
+                    do {
+                        try engine.start()
+                        return true
+                    } catch {
+                        Logger.debug("[SoundPlayer] Second attempt to restart engine failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+            
+            return engine.isRunning
         } catch {
             Logger.debug("[SoundPlayer] Failed to setup voice processing: \(error.localizedDescription)")
             // Try to restart the engine if we failed
