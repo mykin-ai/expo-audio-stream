@@ -278,7 +278,7 @@ class AudioRecorderManager(
 
             if (!isRecording.get()) {
                 Log.e(Constants.TAG, "Recording is not active")
-                promise.reject("NOT_RECORDING", "Recording is not active", null)
+                promise.resolve(null)
                 return
             }
 
