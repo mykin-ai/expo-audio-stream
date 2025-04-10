@@ -3,6 +3,9 @@ package expo.modules.audiostream
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -44,9 +47,86 @@ class AudioRecorderManager(
     private val audioRecordLock = Any()
     private var audioFileHandler: AudioFileHandler = AudioFileHandler(filesDir)
 
+    // Audio effects
+    private var acousticEchoCanceler: AcousticEchoCanceler? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var automaticGainControl: AutomaticGainControl? = null
+
     private lateinit var recordingConfig: RecordingConfig
     private var mimeType = "audio/wav"
     private var audioFormat: Int = AudioFormat.ENCODING_PCM_16BIT
+
+    /**
+     * Sets up audio effects (AEC, NS, AGC) for the current AudioRecord instance
+     * Always enables all available audio effects for best call quality
+     */
+    private fun setupAudioEffects() {
+        audioRecord?.let { record ->
+            val audioSessionId = record.audioSessionId
+            
+            // Release any existing effects first
+            releaseAudioEffects()
+            
+            try {
+                // Log availability of audio effects
+                Log.d(Constants.TAG, "AEC available: ${AcousticEchoCanceler.isAvailable()}")
+                Log.d(Constants.TAG, "NS available: ${NoiseSuppressor.isAvailable()}")
+                Log.d(Constants.TAG, "AGC available: ${AutomaticGainControl.isAvailable()}")
+                
+                // Apply echo cancellation if available
+                if (AcousticEchoCanceler.isAvailable()) {
+                    acousticEchoCanceler = AcousticEchoCanceler.create(audioSessionId)
+                    acousticEchoCanceler?.enabled = true
+                    Log.d(Constants.TAG, "Acoustic Echo Canceler enabled: ${acousticEchoCanceler?.enabled}")
+                }
+                
+                // Apply noise suppression if available
+                if (NoiseSuppressor.isAvailable()) {
+                    noiseSuppressor = NoiseSuppressor.create(audioSessionId)
+                    noiseSuppressor?.enabled = true
+                    Log.d(Constants.TAG, "Noise Suppressor enabled: ${noiseSuppressor?.enabled}")
+                }
+                
+                // Apply automatic gain control if available
+                if (AutomaticGainControl.isAvailable()) {
+                    automaticGainControl = AutomaticGainControl.create(audioSessionId)
+                    automaticGainControl?.enabled = true
+                    Log.d(Constants.TAG, "Automatic Gain Control enabled: ${automaticGainControl?.enabled}")
+                } else {
+
+                }
+            } catch (e: Exception) {
+                Log.e(Constants.TAG, "Error setting up audio effects", e)
+            }
+        }
+    }
+
+    /**
+     * Releases all audio effects
+     */
+    private fun releaseAudioEffects() {
+        try {
+            acousticEchoCanceler?.let {
+                if (it.enabled) it.enabled = false
+                it.release()
+                acousticEchoCanceler = null
+            }
+            
+            noiseSuppressor?.let {
+                if (it.enabled) it.enabled = false
+                it.release()
+                noiseSuppressor = null
+            }
+            
+            automaticGainControl?.let {
+                if (it.enabled) it.enabled = false
+                it.release()
+                automaticGainControl = null
+            }
+        } catch (e: Exception) {
+            Log.e(Constants.TAG, "Error releasing audio effects", e)
+        }
+    }
 
     @RequiresApi(Build.VERSION_CODES.R)
     fun startRecording(options: Map<String, Any?>, promise: Promise) {
@@ -145,21 +225,6 @@ class AudioRecorderManager(
         // Update recordingConfig with potentially new encoding
         recordingConfig = tempRecordingConfig
 
-
-        // Check if selected audio format is supported
-        if (!isAudioFormatSupported(tempRecordingConfig.sampleRate, tempRecordingConfig.channels, audioFormat)) {
-            Log.e(Constants.TAG, "Selected audio format not supported, falling back to 16-bit PCM")
-            audioFormat = AudioFormat.ENCODING_PCM_16BIT
-            if (!isAudioFormatSupported(tempRecordingConfig.sampleRate, tempRecordingConfig.channels, audioFormat)) {
-                promise.reject("INITIALIZATION_FAILED", "Failed to initialize audio recorder with any supported format", null)
-                return
-            }
-            tempRecordingConfig = tempRecordingConfig.copy(encoding = "pcm_16bit")
-        }
-
-        // Update recordingConfig with potentially new encoding
-        recordingConfig = tempRecordingConfig
-
         // Recalculate bufferSizeInBytes if the format has changed
         bufferSizeInBytes = AudioRecord.getMinBufferSize(
             recordingConfig.sampleRate,
@@ -178,8 +243,11 @@ class AudioRecorderManager(
         if (audioRecord == null || !isPaused.get()) {
             Log.d(Constants.TAG, "AudioFormat: $audioFormat, BufferSize: $bufferSizeInBytes")
 
+            // Always use VOICE_COMMUNICATION for better echo cancellation
+            val audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
+                audioSource, // Using VOICE_COMMUNICATION for built-in echo cancellation
                 recordingConfig.sampleRate,
                 if (recordingConfig.channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO,
                 audioFormat,
@@ -213,6 +281,10 @@ class AudioRecorderManager(
         }
 
         audioRecord?.startRecording()
+        
+        // Apply audio effects after starting recording
+        setupAudioEffects()
+        
         isPaused.set(false)
         isRecording.set(true)
 
@@ -250,8 +322,11 @@ class AudioRecorderManager(
             return false
         }
 
+        // Always use VOICE_COMMUNICATION for better echo cancellation
+        val audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION
+        
         val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            audioSource,  // Using VOICE_COMMUNICATION source
             sampleRate,
             channelConfig,
             format,
@@ -289,6 +364,9 @@ class AudioRecorderManager(
                 if (bytesRead > 0) {
                     emitAudioData(audioData, bytesRead)
                 }
+
+                // Release audio effects first
+                releaseAudioEffects()
 
                 Log.d(Constants.TAG, "Stopping recording state = ${audioRecord?.state}")
                 if (audioRecord != null && audioRecord!!.state == AudioRecord.STATE_INITIALIZED) {
@@ -347,6 +425,9 @@ class AudioRecorderManager(
 
     fun pauseRecording(promise: Promise) {
         if (isRecording.get() && !isPaused.get()) {
+            // Release audio effects when pausing
+            releaseAudioEffects()
+            
             audioRecord?.stop()
             lastPauseTime =
                 System.currentTimeMillis()  // Record the time when the recording was paused
@@ -373,6 +454,10 @@ class AudioRecorderManager(
         pausedDuration += System.currentTimeMillis() - lastPauseTime
         isPaused.set(false)
         audioRecord?.startRecording()
+        
+        // Re-apply audio effects when resuming
+        setupAudioEffects()
+        
         promise.resolve("Recording resumed")
     }
 

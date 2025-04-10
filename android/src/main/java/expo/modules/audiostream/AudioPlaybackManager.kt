@@ -3,6 +3,7 @@ package expo.modules.audiostream
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Bundle
 import android.util.Base64
 import android.util.Log
 import expo.modules.kotlin.Promise
@@ -46,7 +47,7 @@ data class AudioChunk(
     var isPromiseSettled: Boolean = false
 ) // contains the decoded base64 chunk
 
-class AudioPlaybackManager() {
+class AudioPlaybackManager(private val eventSender: EventSender? = null) {
     private lateinit var processingChannel: Channel<ChunkData>
     private lateinit var playbackChannel: Channel<AudioChunk>
 
@@ -59,9 +60,14 @@ class AudioPlaybackManager() {
     private var isPlaying = false
     private var isMuted = false
     private var currentTurnId: String? = null
+    private var hasSentSoundStartedEvent = false
+    private var segmentsLeftToPlay = 0
     
     // Current sound configuration
     private var config: SoundConfig = SoundConfig.DEFAULT
+    
+    // Specific turnID to ignore sound events (similar to iOS)
+    private val suspendSoundEventTurnId: String = "suspend-sound-events"
 
     init {
         initializeAudioTrack()
@@ -123,7 +129,10 @@ class AudioPlaybackManager() {
                 initializeChannels()
             }
             Log.d("ExpoPlayStreamModule", "PlayAudio input $turnId and current id $currentTurnId with encoding $encoding")
-            currentTurnId = turnId
+            
+            // Update the current turnId (this will reset flags if needed through setCurrentTurnId)
+            setCurrentTurnId(turnId)
+            
             isMuted = false
             processingChannel.send(ChunkData(chunk, turnId, promise, encoding))
             ensureProcessingLoopStarted()
@@ -131,6 +140,14 @@ class AudioPlaybackManager() {
     }
 
     fun setCurrentTurnId(turnId: String) {
+        // Reset tracking flags when turnId changes
+        if (currentTurnId != turnId) {
+            hasSentSoundStartedEvent = false
+            // Only reset segments counter if we're not in the middle of playback
+            if (!isPlaying || playbackChannel.isEmpty) {
+                segmentsLeftToPlay = 0
+            }
+        }
         currentTurnId = turnId
     }
 
@@ -179,6 +196,17 @@ class AudioPlaybackManager() {
             // Use the encoding specified in the chunk data
             val audioData = convertPCMDataToFloatArray(audioDataWithoutRIFF, chunkData.encoding)
 
+            // Check if this is the first chunk and we need to send the SoundStarted event
+            // Using hybrid approach checking both flag, segments count, and channel state
+            val isFirstChunk = segmentsLeftToPlay == 0 && 
+                              playbackChannel.isEmpty && 
+                              (!hasSentSoundStartedEvent || !isPlaying)
+                              
+            if (isFirstChunk && chunkData.turnId != suspendSoundEventTurnId) {
+                sendSoundStartedEvent()
+                hasSentSoundStartedEvent = true
+            }
+
             playbackChannel.send(
                 AudioChunk(
                     audioData,
@@ -186,6 +214,9 @@ class AudioPlaybackManager() {
                     chunkData.turnId
                 )
             )
+            
+            // Increment the segments counter
+            segmentsLeftToPlay++
 
             if (!isPlaying) {
                 Log.d("ExpoPlayStreamModule", "Start Playback")
@@ -324,6 +355,12 @@ class AudioPlaybackManager() {
                     Log.d("ExpoPlayStreamModule", "Playback channel is already closed")
                 }
 
+                // Reset the sound started event flag
+                hasSentSoundStartedEvent = false
+                
+                // Reset the segments counter
+                segmentsLeftToPlay = 0
+
                 Log.d("ExpoPlayStreamModule", "Stopped")
                 promise?.resolve(null)
             } catch (e: CancellationException) {
@@ -401,6 +438,16 @@ class AudioPlaybackManager() {
                         // Continue monitoring for logging purposes
                         delay(playbackDurationMs - waitTime)
                         Log.d("ExpoPlayStreamModule", "Playback of chunk likely completed after ${playbackDurationMs}ms")
+                        
+                        // Decrement the segments counter
+                        segmentsLeftToPlay = (segmentsLeftToPlay - 1).coerceAtLeast(0)
+                        
+                        // Check if this was the last chunk in the queue and send the final event if so
+                        val isFinalChunk = playbackChannel.isEmpty && segmentsLeftToPlay == 0
+                        
+                        if (chunk.turnId != suspendSoundEventTurnId) {
+                            sendSoundChunkPlayedEvent(isFinalChunk)
+                        }
                     }
                     
                     continuation.invokeOnCancellation {
@@ -427,6 +474,25 @@ class AudioPlaybackManager() {
                 }
             }
         }
+    }
+
+    /**
+     * Sends the SoundStarted event to JavaScript
+     */
+    private fun sendSoundStartedEvent() {
+        Log.d("ExpoPlayStreamModule", "Sending SoundStarted event")
+        eventSender?.sendExpoEvent(Constants.SOUND_STARTED_EVENT_NAME, Bundle())
+    }
+
+    /**
+     * Sends the SoundChunkPlayed event to JavaScript
+     * @param isFinal Boolean indicating if this is the final chunk in the playback sequence
+     */
+    private fun sendSoundChunkPlayedEvent(isFinal: Boolean) {
+        Log.d("ExpoPlayStreamModule", "Sending SoundChunkPlayed event with isFinal=$isFinal")
+        val params = Bundle()
+        params.putBoolean("isFinal", isFinal)
+        eventSender?.sendExpoEvent(Constants.SOUND_CHUNK_PLAYED_EVENT_NAME, params)
     }
 
     /**
