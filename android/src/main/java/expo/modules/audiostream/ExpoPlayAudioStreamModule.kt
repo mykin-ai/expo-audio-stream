@@ -19,7 +19,12 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
     override fun definition() = ModuleDefinition {
         Name("ExpoPlayAudioStream")
 
-        Events(Constants.AUDIO_EVENT_NAME)
+        Events(
+            Constants.AUDIO_EVENT_NAME,
+            Constants.SOUND_CHUNK_PLAYED_EVENT_NAME,
+            Constants.SOUND_STARTED_EVENT_NAME,
+            Constants.DEVICE_RECONNECTED_EVENT_NAME
+        )
 
         // Initialize managers for playback and for recording
         initializeManager()
@@ -183,7 +188,7 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
     }
 
     private fun initializePlaybackManager() {
-        audioPlaybackManager = AudioPlaybackManager()
+        audioPlaybackManager = AudioPlaybackManager(this)
     }
 
     override fun sendExpoEvent(eventName: String, params: Bundle) {
