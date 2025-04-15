@@ -121,7 +121,7 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         }
 
         AsyncFunction("playWav") { chunk: String, promise: Promise ->
-            audioPlaybackManager.playAudio(chunk, "", promise)
+            audioPlaybackManager.playAudio(chunk, AudioPlaybackManager.SUSPEND_SOUND_EVENT_TURN_ID, promise)
         }
 
         AsyncFunction("stopSound") { promise: Promise -> audioPlaybackManager.stopPlayback(promise) }

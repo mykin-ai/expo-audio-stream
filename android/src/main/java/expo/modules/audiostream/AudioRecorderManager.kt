@@ -29,7 +29,7 @@ class AudioRecorderManager(
     private val eventSender: EventSender
 ) {
     private var audioRecord: AudioRecord? = null
-    private var bufferSizeInBytes = 0
+    private var bufferSizeInBytes = 1024
     private var isRecording = AtomicBoolean(false)
     private val isPaused = AtomicBoolean(false)
     private var streamUuid: String? = null
@@ -38,7 +38,7 @@ class AudioRecorderManager(
     private var recordingStartTime: Long = 0
     private var totalRecordedTime: Long = 0
     private var totalDataSize = 0
-    private var interval = 1000L  // Emit data every 1000 milliseconds (1 second)
+    private var interval = 100L  // Emit data every 100 milliseconds (0.1 second)
     private var lastEmitTime = SystemClock.elapsedRealtime()
     private var lastPauseTime = 0L
     private var pausedDuration = 0L
@@ -73,31 +73,44 @@ class AudioRecorderManager(
                 Log.d(Constants.TAG, "NS available: ${NoiseSuppressor.isAvailable()}")
                 Log.d(Constants.TAG, "AGC available: ${AutomaticGainControl.isAvailable()}")
                 
-                // Apply echo cancellation if available
+                // Apply echo cancellation if available - KEEPING ENABLED FOR VOICE APP
                 if (AcousticEchoCanceler.isAvailable()) {
                     acousticEchoCanceler = AcousticEchoCanceler.create(audioSessionId)
                     acousticEchoCanceler?.enabled = true
                     Log.d(Constants.TAG, "Acoustic Echo Canceler enabled: ${acousticEchoCanceler?.enabled}")
-                }
-                
-                // Apply noise suppression if available
-                if (NoiseSuppressor.isAvailable()) {
-                    noiseSuppressor = NoiseSuppressor.create(audioSessionId)
-                    noiseSuppressor?.enabled = true
-                    Log.d(Constants.TAG, "Noise Suppressor enabled: ${noiseSuppressor?.enabled}")
-                }
-                
-                // Apply automatic gain control if available
-                if (AutomaticGainControl.isAvailable()) {
-                    automaticGainControl = AutomaticGainControl.create(audioSessionId)
-                    automaticGainControl?.enabled = true
-                    Log.d(Constants.TAG, "Automatic Gain Control enabled: ${automaticGainControl?.enabled}")
                 } else {
 
                 }
+                
             } catch (e: Exception) {
                 Log.e(Constants.TAG, "Error setting up audio effects", e)
             }
+        }
+    }
+
+    /**
+     * Enables Noise Suppression if available for the given audio session.
+     * @param audioSessionId The audio session ID to apply the effect to.
+     */
+    private fun enableNoiseSuppression(audioSessionId: Int) {
+        // Apply noise suppression if available
+        if (NoiseSuppressor.isAvailable()) {
+            noiseSuppressor = NoiseSuppressor.create(audioSessionId)
+            noiseSuppressor?.enabled = true
+            Log.d(Constants.TAG, "Noise Suppressor enabled: ${noiseSuppressor?.enabled}")
+        }
+    }
+
+    /**
+     * Enables Automatic Gain Control if available for the given audio session.
+     * @param audioSessionId The audio session ID to apply the effect to.
+     */
+    private fun enableAutomaticGainControl(audioSessionId: Int) {
+        // Apply automatic gain control if available
+        if (AutomaticGainControl.isAvailable()) {
+            automaticGainControl = AutomaticGainControl.create(audioSessionId)
+            automaticGainControl?.enabled = true
+            Log.d(Constants.TAG, "Automatic Gain Control enabled: ${automaticGainControl?.enabled}")
         }
     }
 
@@ -224,20 +237,6 @@ class AudioRecorderManager(
 
         // Update recordingConfig with potentially new encoding
         recordingConfig = tempRecordingConfig
-
-        // Recalculate bufferSizeInBytes if the format has changed
-        bufferSizeInBytes = AudioRecord.getMinBufferSize(
-            recordingConfig.sampleRate,
-            if (recordingConfig.channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO,
-            audioFormat
-        )
-
-        if (bufferSizeInBytes == AudioRecord.ERROR || bufferSizeInBytes == AudioRecord.ERROR_BAD_VALUE || bufferSizeInBytes < 0) {
-            Log.e(Constants.TAG, "Failed to get minimum buffer size, falling back to default buffer size.")
-            bufferSizeInBytes = 4096 // Default buffer size in bytes
-        }
-
-        Log.d(Constants.TAG, "AudioFormat: $audioFormat, BufferSize: $bufferSizeInBytes")
 
         // Initialize the AudioRecord if it's a new recording or if it's not currently paused
         if (audioRecord == null || !isPaused.get()) {
@@ -585,6 +584,9 @@ class AudioRecorderManager(
         // Calculate position in milliseconds
         val positionInMs = (from * 1000) / (recordingConfig.sampleRate * recordingConfig.channels * (if (recordingConfig.encoding == "pcm_8bit") 8 else 16) / 8)
 
+        // Calculate power level for the current chunk
+        val soundLevel = calculatePowerLevel(audioData, length)
+
         mainHandler.post {
             try {
                 eventSender.sendExpoEvent(
@@ -595,6 +597,7 @@ class AudioRecorderManager(
                         "deltaSize" to length,
                         "position" to positionInMs,
                         "mimeType" to mimeType,
+                        "soundLevel" to soundLevel,
                         "totalSize" to fileSize,
                         "streamUuid" to streamUuid
                     )
@@ -603,6 +606,49 @@ class AudioRecorderManager(
                 Log.e(Constants.TAG, "Failed to send event", e)
             }
         }
+    }
+
+    /**
+     * Calculates the power level (dBFS) of the audio data.
+     * Assumes PCM 16-bit encoding.
+     *
+     * @param audioData The byte array containing audio data.
+     * @param bytesRead The number of bytes read into the audioData buffer.
+     * @return The power level in dBFS (typically -160.0 to 0.0). Returns -160.0 for silence.
+     */
+    private fun calculatePowerLevel(audioData: ByteArray, bytesRead: Int): Float {
+        if (bytesRead <= 0 || audioData.isEmpty()) {
+            return -160.0f // Represent silence or no data
+        }
+
+        // Assuming PCM 16-bit, so 2 bytes per sample
+        val shorts = ShortArray(bytesRead / 2)
+        // Ensure we only process the valid portion of the audioData buffer
+        val byteBuffer = java.nio.ByteBuffer.wrap(audioData, 0, bytesRead).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        byteBuffer.asShortBuffer().get(shorts)
+
+        if (shorts.isEmpty()) {
+             return -160.0f // Represent silence
+        }
+
+        var sumOfSquares: Double = 0.0
+        for (sample in shorts) {
+            val normalizedSample = sample / 32767.0 // Normalize sample to -1.0 to 1.0
+            sumOfSquares += normalizedSample * normalizedSample
+        }
+
+        val rms = kotlin.math.sqrt(sumOfSquares / shorts.size)
+
+        // Handle RMS of 0 (silence) to avoid log10(0)
+        if (rms < 1e-9) { // Use a small epsilon to check for effective silence
+            return -160.0f
+        }
+
+        // Convert RMS to dBFS (dB relative to full scale)
+        val dbfs = 20.0 * kotlin.math.log10(rms)
+
+        // Clamp the value to a minimum of -160 dBFS, maximum of 0 dBFS
+        return dbfs.toFloat().coerceIn(-160.0f, 0.0f)
     }
 
     private fun getCompressedAudioDuration(file: File?): Long {

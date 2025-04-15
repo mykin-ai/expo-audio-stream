@@ -67,7 +67,7 @@ class AudioPlaybackManager(private val eventSender: EventSender? = null) {
     private var config: SoundConfig = SoundConfig.DEFAULT
     
     // Specific turnID to ignore sound events (similar to iOS)
-    private val suspendSoundEventTurnId: String = "suspend-sound-events"
+    // Removed: private val suspendSoundEventTurnId: String = "suspend-sound-events"
 
     init {
         initializeAudioTrack()
@@ -202,7 +202,7 @@ class AudioPlaybackManager(private val eventSender: EventSender? = null) {
                               playbackChannel.isEmpty && 
                               (!hasSentSoundStartedEvent || !isPlaying)
                               
-            if (isFirstChunk && chunkData.turnId != suspendSoundEventTurnId) {
+            if (isFirstChunk && chunkData.turnId != SUSPEND_SOUND_EVENT_TURN_ID) {
                 sendSoundStartedEvent()
                 hasSentSoundStartedEvent = true
             }
@@ -217,6 +217,7 @@ class AudioPlaybackManager(private val eventSender: EventSender? = null) {
             
             // Increment the segments counter
             segmentsLeftToPlay++
+            Log.d("ExpoPlayStreamModule", "Chunk enqueued, segments waiting: $segmentsLeftToPlay for turnId: ${chunkData.turnId}")
 
             if (!isPlaying) {
                 Log.d("ExpoPlayStreamModule", "Start Playback")
@@ -378,7 +379,7 @@ class AudioPlaybackManager(private val eventSender: EventSender? = null) {
             coroutineScope.launch {
                 playbackChannel.consumeAsFlow().collect { chunk ->
                     if (isPlaying) {
-                        Log.d("ExpoPlayStreamModule", "Playing chunk : $chunk")
+                        
                         if (currentTurnId == chunk.turnId) {
                             playChunk(chunk)
                         }
@@ -430,24 +431,17 @@ class AudioPlaybackManager(private val eventSender: EventSender? = null) {
                     // Store a reference to the delay job
                     val delayJob = coroutineScope.launch {
                         // Wait for a portion of the audio to play
-                        val waitTime = (playbackDurationMs * 0.5).toLong().coerceAtMost(90)
-                        delay(waitTime)
-                        Log.d("ExpoPlayStreamModule", "Resuming after ${waitTime}ms delay (50% of duration)")
+                        // Wait for 50% of duration, but cap at 90% of duration to ensure loop continues reasonably quickly
+                        val waitTime = (playbackDurationMs * 0.5).toLong().coerceAtMost((playbackDurationMs * 0.9).toLong()) // Keep early resume
+                        delay(waitTime) // Wait for partial duration
+                        Log.d("ExpoPlayStreamModule", "Resuming continuation after ${waitTime}ms delay")
                         continuation.resumeWith(Result.success(Unit))
-                        
-                        // Continue monitoring for logging purposes
+
+                        // Continue waiting in the background for the rest of the estimated duration
                         delay(playbackDurationMs - waitTime)
                         Log.d("ExpoPlayStreamModule", "Playback of chunk likely completed after ${playbackDurationMs}ms")
-                        
-                        // Decrement the segments counter
-                        segmentsLeftToPlay = (segmentsLeftToPlay - 1).coerceAtLeast(0)
-                        
-                        // Check if this was the last chunk in the queue and send the final event if so
-                        val isFinalChunk = playbackChannel.isEmpty && segmentsLeftToPlay == 0
-                        
-                        if (chunk.turnId != suspendSoundEventTurnId) {
-                            sendSoundChunkPlayedEvent(isFinalChunk)
-                        }
+                        // Signal that this chunk has finished playing asynchronously
+                        handleChunkCompletion(chunk)
                     }
                     
                     continuation.invokeOnCancellation {
@@ -472,6 +466,29 @@ class AudioPlaybackManager(private val eventSender: EventSender? = null) {
                     chunk.isPromiseSettled = true
                     chunk.promise.reject("ERR_PLAYBACK", e.message, e)
                 }
+            }
+        }
+    }
+
+    /**
+     * Handles the completion of a single audio chunk's estimated playback duration.
+     * This is called asynchronously from the delay job within playChunk.
+     * Decrements the segment counter and sends the final event if applicable.
+     * Uses coroutineScope to ensure thread safety if needed for state access.
+     */
+    private fun handleChunkCompletion(chunk: AudioChunk) {
+        coroutineScope.launch { // Launch on default dispatcher for safety
+            segmentsLeftToPlay = (segmentsLeftToPlay - 1).coerceAtLeast(0)
+            Log.d("ExpoPlayStreamModule", "Chunk finished playback (estimated), segments left: $segmentsLeftToPlay for turnId: ${chunk.turnId}")
+
+            // Check if this was the last chunk for the current turn ID and the queue is empty
+            val isFinalChunk = segmentsLeftToPlay == 0 && playbackChannel.isEmpty && chunk.turnId == currentTurnId
+
+            if (isFinalChunk && chunk.turnId != SUSPEND_SOUND_EVENT_TURN_ID) {
+                Log.d("ExpoPlayStreamModule", "Sending FINAL SoundChunkPlayed event")
+                sendSoundChunkPlayedEvent(isFinal = true)
+                // Reset the flag after the final chunk event for this turn is sent
+                hasSentSoundStartedEvent = false
             }
         }
     }
@@ -667,5 +684,10 @@ class AudioPlaybackManager(private val eventSender: EventSender? = null) {
     fun resetConfigToDefault(promise: Promise) {
         Log.d("ExpoPlayStreamModule", "Resetting sound configuration to default values")
         updateConfig(SoundConfig.DEFAULT, promise)
+    }
+
+    companion object {
+        // Public constant for suspending sound events
+        public const val SUSPEND_SOUND_EVENT_TURN_ID: String = "suspend-sound-events"
     }
 }
