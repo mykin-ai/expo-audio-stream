@@ -3,11 +3,7 @@ package expo.modules.audiostream
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -26,7 +22,8 @@ class AudioRecorderManager(
     private val filesDir: File,
     private val permissionUtils: PermissionUtils,
     private val audioDataEncoder: AudioDataEncoder,
-    private val eventSender: EventSender
+    private val eventSender: EventSender,
+    private val audioEffectsManager: AudioEffectsManager
 ) {
     private var audioRecord: AudioRecord? = null
     private var bufferSizeInBytes = 1024
@@ -46,243 +43,110 @@ class AudioRecorderManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val audioRecordLock = Any()
     private var audioFileHandler: AudioFileHandler = AudioFileHandler(filesDir)
-
-    // Audio effects
-    private var acousticEchoCanceler: AcousticEchoCanceler? = null
-    private var noiseSuppressor: NoiseSuppressor? = null
-    private var automaticGainControl: AutomaticGainControl? = null
+    
+    // Flag to control whether actual audio data or silence is sent
+    private var isSilent = false
 
     private lateinit var recordingConfig: RecordingConfig
     private var mimeType = "audio/wav"
     private var audioFormat: Int = AudioFormat.ENCODING_PCM_16BIT
 
     /**
-     * Sets up audio effects (AEC, NS, AGC) for the current AudioRecord instance
-     * Always enables all available audio effects for best call quality
+     * Validates the recording state by checking permission and recording status
+     * @param promise Promise to reject if validation fails
+     * @param checkRecordingState Whether to check if recording is in progress
+     * @param shouldRejectIfRecording Whether to reject if recording is in progress
+     * @return True if validation passes, false otherwise
      */
-    private fun setupAudioEffects() {
-        audioRecord?.let { record ->
-            val audioSessionId = record.audioSessionId
-            
-            // Release any existing effects first
-            releaseAudioEffects()
-            
-            try {
-                // Log availability of audio effects
-                Log.d(Constants.TAG, "AEC available: ${AcousticEchoCanceler.isAvailable()}")
-                Log.d(Constants.TAG, "NS available: ${NoiseSuppressor.isAvailable()}")
-                Log.d(Constants.TAG, "AGC available: ${AutomaticGainControl.isAvailable()}")
-                
-                // Apply echo cancellation if available - KEEPING ENABLED FOR VOICE APP
-                if (AcousticEchoCanceler.isAvailable()) {
-                    acousticEchoCanceler = AcousticEchoCanceler.create(audioSessionId)
-                    acousticEchoCanceler?.enabled = true
-                    Log.d(Constants.TAG, "Acoustic Echo Canceler enabled: ${acousticEchoCanceler?.enabled}")
-                } else {
-
-                }
-                
-            } catch (e: Exception) {
-                Log.e(Constants.TAG, "Error setting up audio effects", e)
+    private fun validateRecordingState(
+        promise: Promise? = null,
+        checkRecordingState: Boolean = false,
+        shouldRejectIfRecording: Boolean = true
+    ): Boolean {
+        // First check permission
+        if (!permissionUtils.checkRecordingPermission()) {
+            if (promise != null) {
+                promise.reject("PERMISSION_DENIED", "Recording permission has not been granted", null)
+            } else {
+                throw SecurityException("Recording permission has not been granted")
             }
+            return false
         }
-    }
-
-    /**
-     * Enables Noise Suppression if available for the given audio session.
-     * @param audioSessionId The audio session ID to apply the effect to.
-     */
-    private fun enableNoiseSuppression(audioSessionId: Int) {
-        // Apply noise suppression if available
-        if (NoiseSuppressor.isAvailable()) {
-            noiseSuppressor = NoiseSuppressor.create(audioSessionId)
-            noiseSuppressor?.enabled = true
-            Log.d(Constants.TAG, "Noise Suppressor enabled: ${noiseSuppressor?.enabled}")
-        }
-    }
-
-    /**
-     * Enables Automatic Gain Control if available for the given audio session.
-     * @param audioSessionId The audio session ID to apply the effect to.
-     */
-    private fun enableAutomaticGainControl(audioSessionId: Int) {
-        // Apply automatic gain control if available
-        if (AutomaticGainControl.isAvailable()) {
-            automaticGainControl = AutomaticGainControl.create(audioSessionId)
-            automaticGainControl?.enabled = true
-            Log.d(Constants.TAG, "Automatic Gain Control enabled: ${automaticGainControl?.enabled}")
-        }
-    }
-
-    /**
-     * Releases all audio effects
-     */
-    private fun releaseAudioEffects() {
-        try {
-            acousticEchoCanceler?.let {
-                if (it.enabled) it.enabled = false
-                it.release()
-                acousticEchoCanceler = null
+        
+        // Then check recording state if requested
+        if (checkRecordingState) {
+            val isActive = isRecording.get() && !isPaused.get()
+            
+            if (isActive && shouldRejectIfRecording && promise != null) {
+                promise.resolve("Recording is already in progress")
+                return false
             }
             
-            noiseSuppressor?.let {
-                if (it.enabled) it.enabled = false
-                it.release()
-                noiseSuppressor = null
-            }
-            
-            automaticGainControl?.let {
-                if (it.enabled) it.enabled = false
-                it.release()
-                automaticGainControl = null
-            }
-        } catch (e: Exception) {
-            Log.e(Constants.TAG, "Error releasing audio effects", e)
+            return !isActive // Return true if not recording (validation passes)
         }
+        
+        return true // Permission check passed
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
     fun startRecording(options: Map<String, Any?>, promise: Promise) {
-        if (!permissionUtils.checkRecordingPermission()) {
-            promise.reject("PERMISSION_DENIED", "Recording permission has not been granted", null)
+        // Check permission and recording state
+        if (!validateRecordingState(promise, checkRecordingState = true, shouldRejectIfRecording = true)) {
             return
         }
 
-        if (isRecording.get() && !isPaused.get()) {
-            promise.reject("ALREADY_RECORDING", "Recording is already in progress", null)
-            return
-        }
-
-        // Initialize the recording configuration
-        var tempRecordingConfig = RecordingConfig(
-            sampleRate = (options["sampleRate"] as? Number)?.toInt() ?: Constants.DEFAULT_SAMPLE_RATE,
-            channels = (options["channels"] as? Number)?.toInt() ?: 1,
-            encoding = options["encoding"] as? String ?: "pcm_16bit",
-            interval = (options["interval"] as? Number)?.toLong() ?: Constants.DEFAULT_INTERVAL,
-            pointsPerSecond = (options["pointsPerSecond"] as? Number)?.toDouble() ?: 20.0
-        )
+        // Initialize the recording configuration using the factory method
+        val tempRecordingConfig = RecordingConfig.fromOptions(options)
         Log.d(Constants.TAG, "Initial recording configuration: $tempRecordingConfig")
-
-        // Validate sample rate and channels
-        if (tempRecordingConfig.sampleRate !in listOf(16000, 44100, 48000)) {
-            promise.reject(
-                "INVALID_SAMPLE_RATE",
-                "Sample rate must be one of 16000, 44100, or 48000 Hz",
-                null
-            )
-            return
-        }
-        if (tempRecordingConfig.channels !in 1..2) {
-            promise.reject(
-                "INVALID_CHANNELS",
-                "Channels must be either 1 (Mono) or 2 (Stereo)",
-                null
-            )
+        
+        // Validate the recording configuration
+        val configValidationResult = tempRecordingConfig.validate()
+        if (configValidationResult != null) {
+            promise.reject(configValidationResult.code, configValidationResult.message, null)
             return
         }
 
-        // Set encoding and file extension
-        var fileExtension = ".wav"
-        audioFormat = when (tempRecordingConfig.encoding) {
-            "pcm_8bit" -> {
-                fileExtension = "wav"
-                mimeType = "audio/wav"
-                AudioFormat.ENCODING_PCM_8BIT
-            }
-            "pcm_16bit" -> {
-                fileExtension = "wav"
-                mimeType = "audio/wav"
-                AudioFormat.ENCODING_PCM_16BIT
-            }
-            "pcm_32bit" -> {
-                fileExtension = "wav"
-                mimeType = "audio/wav"
-                AudioFormat.ENCODING_PCM_FLOAT
-            }
-            "opus" -> {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                    promise.reject(
-                        "UNSUPPORTED_FORMAT",
-                        "Opus encoding not supported on this Android version.",
-                        null
-                    )
-                    return
-                }
-                fileExtension = "opus"
-                mimeType = "audio/opus"
-                AudioFormat.ENCODING_OPUS
-            }
-            "aac_lc" -> {
-                fileExtension = "aac"
-                mimeType = "audio/aac"
-                AudioFormat.ENCODING_AAC_LC
-            }
-            else -> {
-                fileExtension = "wav"
-                mimeType = "audio/wav"
-                AudioFormat.ENCODING_DEFAULT
-            }
+        // Get audio format configuration using the helper
+        val formatConfig = audioDataEncoder.getAudioFormatConfig(tempRecordingConfig.encoding)
+        
+        // Check for any errors in the configuration
+        if (formatConfig.error != null) {
+            promise.reject("UNSUPPORTED_FORMAT", formatConfig.error, null)
+            return
         }
-
-        // Check if selected audio format is supported
-        if (!isAudioFormatSupported(tempRecordingConfig.sampleRate, tempRecordingConfig.channels, audioFormat)) {
-            Log.e(Constants.TAG, "Selected audio format not supported, falling back to 16-bit PCM")
-            audioFormat = AudioFormat.ENCODING_PCM_16BIT
-            if (!isAudioFormatSupported(tempRecordingConfig.sampleRate, tempRecordingConfig.channels, audioFormat)) {
-                promise.reject("INITIALIZATION_FAILED", "Failed to initialize audio recorder with any supported format", null)
-                return
-            }
-            tempRecordingConfig = tempRecordingConfig.copy(encoding = "pcm_16bit")
+        
+        // Set the audio format
+        audioFormat = formatConfig.audioFormat
+        
+        // Validate the audio format and get potentially updated config
+        val formatValidationResult = validateAudioFormat(tempRecordingConfig, audioFormat, promise)
+        if (formatValidationResult == null) {
+            return
         }
-
-        // Update recordingConfig with potentially new encoding
-        recordingConfig = tempRecordingConfig
-
+        
+        // Update with validated values
+        audioFormat = formatValidationResult.first
+        recordingConfig = formatValidationResult.second
+        
         // Initialize the AudioRecord if it's a new recording or if it's not currently paused
         if (audioRecord == null || !isPaused.get()) {
             Log.d(Constants.TAG, "AudioFormat: $audioFormat, BufferSize: $bufferSizeInBytes")
 
-            // Always use VOICE_COMMUNICATION for better echo cancellation
-            val audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION
-            
-            audioRecord = AudioRecord(
-                audioSource, // Using VOICE_COMMUNICATION for built-in echo cancellation
-                recordingConfig.sampleRate,
-                if (recordingConfig.channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO,
-                audioFormat,
-                bufferSizeInBytes
-            )
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                promise.reject(
-                    "INITIALIZATION_FAILED",
-                    "Failed to initialize the audio recorder",
-                    null
-                )
+            audioRecord = createAudioRecord(tempRecordingConfig, audioFormat, promise)
+            if (audioRecord == null) {
                 return
             }
         }
-
-        streamUuid = java.util.UUID.randomUUID().toString()
-        audioFile = File(filesDir, "audio_${streamUuid}.${fileExtension}")
-
-        try {
-            FileOutputStream(audioFile, true).use { fos ->
-                audioFileHandler.writeWavHeader(fos, recordingConfig.sampleRate, recordingConfig.channels, when (recordingConfig.encoding) {
-                    "pcm_8bit" -> 8
-                    "pcm_16bit" -> 16
-                    "pcm_32bit" -> 32
-                    else -> 16 // Default to 16 if the encoding is not recognized
-                })
-            }
-        } catch (e: IOException) {
-            promise.reject("FILE_CREATION_FAILED", "Failed to create the audio file", e)
+        // Create the audio file and write WAV header
+        audioFile = createAndPrepareAudioFile(formatConfig.fileExtension, recordingConfig)
+        if (audioFile == null) {
+            promise.reject("FILE_CREATION_FAILED", "Failed to create the audio file", null)
             return
         }
 
         audioRecord?.startRecording()
-        
-        // Apply audio effects after starting recording
-        setupAudioEffects()
+        // Apply audio effects after starting recording using the manager
+        audioRecord?.let { audioEffectsManager.setupAudioEffects(it) }
         
         isPaused.set(false)
         isRecording.set(true)
@@ -304,52 +168,59 @@ class AudioRecorderManager(
                 else -> 16 // Default to 16 if the encoding is not recognized
             },
             "sampleRate" to recordingConfig.sampleRate,
-            "mimeType" to mimeType
+            "mimeType" to formatConfig.mimeType
         )
         promise.resolve(result)
     }
 
-    private fun isAudioFormatSupported(sampleRate: Int, channels: Int, format: Int): Boolean {
-        if (!permissionUtils.checkRecordingPermission()) {
-            throw SecurityException("Recording permission has not been granted")
-        }
-
-        val channelConfig = if (channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO
-        val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, format)
-
-        if (bufferSize <= 0) {
-            return false
-        }
-
-        // Always use VOICE_COMMUNICATION for better echo cancellation
-        val audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION
-        
-        val audioRecord = AudioRecord(
-            audioSource,  // Using VOICE_COMMUNICATION source
-            sampleRate,
-            channelConfig,
-            format,
-            bufferSize
-        )
-
-        val isSupported = audioRecord.state == AudioRecord.STATE_INITIALIZED
-        if (isSupported) {
-            val testBuffer = ByteArray(bufferSize)
-            audioRecord.startRecording()
-            val testRead = audioRecord.read(testBuffer, 0, bufferSize)
-            audioRecord.stop()
-            if (testRead < 0) {
-                return false
+    /**
+     * Common resource cleanup logic extracted to avoid duplication
+     */
+    private fun cleanupResources() {
+        try {
+            // Release audio effects
+            audioEffectsManager.releaseAudioEffects()
+            
+            // Stop and release AudioRecord if exists
+            if (audioRecord != null) {
+                try {
+                    if (audioRecord!!.state == AudioRecord.STATE_INITIALIZED) {
+                        audioRecord!!.stop()
+                    }
+                } catch (e: Exception) {
+                    Log.e(Constants.TAG, "Error stopping AudioRecord", e)
+                } finally {
+                    try {
+                        audioRecord!!.release()
+                    } catch (e: Exception) {
+                        Log.e(Constants.TAG, "Error releasing AudioRecord", e)
+                    }
+                }
+                audioRecord = null
             }
+            
+            // Interrupt and clear recording thread
+            recordingThread?.interrupt()
+            recordingThread = null
+            
+            // Always reset state
+            isRecording.set(false)
+            isPaused.set(false)
+            totalRecordedTime = 0
+            pausedDuration = 0
+            totalDataSize = 0
+            streamUuid = null
+            lastEmitTime = SystemClock.elapsedRealtime()
+            lastEmittedSize = 0
+            
+            Log.d(Constants.TAG, "Audio resources cleaned up")
+        } catch (e: Exception) {
+            Log.e(Constants.TAG, "Error during resource cleanup", e)
         }
-
-        audioRecord.release()
-        return isSupported
     }
 
     fun stopRecording(promise: Promise) {
         synchronized(audioRecordLock) {
-
             if (!isRecording.get()) {
                 Log.e(Constants.TAG, "Recording is not active")
                 promise.resolve(null)
@@ -357,28 +228,15 @@ class AudioRecorderManager(
             }
 
             try {
+                // Read any final audio data
                 val audioData = ByteArray(bufferSizeInBytes)
                 val bytesRead = audioRecord?.read(audioData, 0, bufferSizeInBytes) ?: -1
                 Log.d(Constants.TAG, "Last Read $bytesRead bytes")
                 if (bytesRead > 0) {
                     emitAudioData(audioData, bytesRead)
                 }
-
-                // Release audio effects first
-                releaseAudioEffects()
-
-                Log.d(Constants.TAG, "Stopping recording state = ${audioRecord?.state}")
-                if (audioRecord != null && audioRecord!!.state == AudioRecord.STATE_INITIALIZED) {
-                    Log.d(Constants.TAG, "Stopping AudioRecord");
-                    audioRecord!!.stop()
-                }
-            } catch (e: IllegalStateException) {
-                Log.e(Constants.TAG, "Error reading from AudioRecord", e);
-            } finally {
-                audioRecord?.release()
-            }
-
-            try {
+                
+                // Generate result before cleanup
                 val fileSize = audioFile?.length() ?: 0
                 val dataFileSize = fileSize - 44  // Subtract header size
                 val byteRate = recordingConfig.sampleRate * recordingConfig.channels * when (recordingConfig.encoding) {
@@ -406,26 +264,26 @@ class AudioRecorderManager(
                     "size" to fileSize,
                     "mimeType" to mimeType
                 )
+                
+                // Clean up all resources
+                cleanupResources()
+                
+                // Resolve promise with the result
                 promise.resolve(result)
-
-                // Reset the timing variables
-                isRecording.set(false)
-                isPaused.set(false)
-                totalRecordedTime = 0
-                pausedDuration = 0
+                
             } catch (e: Exception) {
                 Log.d(Constants.TAG, "Failed to stop recording", e)
+                // Make sure to clean up even if there's an error
+                cleanupResources()
                 promise.reject("STOP_FAILED", "Failed to stop recording", e)
-            } finally {
-                audioRecord = null
             }
         }
     }
 
     fun pauseRecording(promise: Promise) {
         if (isRecording.get() && !isPaused.get()) {
-            // Release audio effects when pausing
-            releaseAudioEffects()
+            // Release audio effects when pausing using the manager
+            audioEffectsManager.releaseAudioEffects()
             
             audioRecord?.stop()
             lastPauseTime =
@@ -454,47 +312,10 @@ class AudioRecorderManager(
         isPaused.set(false)
         audioRecord?.startRecording()
         
-        // Re-apply audio effects when resuming
-        setupAudioEffects()
+        // Re-apply audio effects when resuming using the manager
+        audioRecord?.let { audioEffectsManager.setupAudioEffects(it) }
         
         promise.resolve("Recording resumed")
-    }
-
-    fun getStatus(): Bundle {
-        synchronized(audioRecordLock) {
-            if (!isRecording.get()) {
-                Log.d(Constants.TAG, "Not recording --- skip status with default values")
-
-                return bundleOf(
-                    "isRecording" to false,
-                    "isPaused" to false,
-                    "mime" to mimeType,
-                    "size" to 0,
-                    "interval" to interval,
-                )
-            }
-
-            // Ensure you update this to check if audioFile is null or not
-            val fileSize = audioFile?.length() ?: 0
-
-            val duration = when (mimeType) {
-                "audio/wav" -> {
-                    val dataFileSize = fileSize - Constants.WAV_HEADER_SIZE // Assuming header is always 44 bytes
-                    val byteRate = recordingConfig.sampleRate * recordingConfig.channels * (if (recordingConfig.encoding == "pcm_8bit") 8 else 16) / 8
-                    if (byteRate > 0) dataFileSize * 1000 / byteRate else 0
-                }
-                "audio/opus", "audio/aac" -> getCompressedAudioDuration(audioFile)
-                else -> 0
-            }
-            return bundleOf(
-                "durationMs" to duration,
-                "isRecording" to isRecording.get(),
-                "isPaused" to isPaused.get(),
-                "mimeType" to mimeType,
-                "size" to totalDataSize,
-                "interval" to recordingConfig.interval
-            )
-        }
     }
 
     fun listAudioFiles(promise: Promise) {
@@ -574,7 +395,10 @@ class AudioRecorderManager(
     }
 
     private fun emitAudioData(audioData: ByteArray, length: Int) {
-        val encodedBuffer = audioDataEncoder.encodeToBase64(audioData)
+        // If silent mode is active, replace audioData with zeros (using concise expression)
+        val dataToEncode = if (isSilent) ByteArray(length) else audioData
+        
+        val encodedBuffer = audioDataEncoder.encodeToBase64(dataToEncode)
 
         val fileSize = audioFile?.length() ?: 0
         val from = lastEmittedSize
@@ -584,8 +408,8 @@ class AudioRecorderManager(
         // Calculate position in milliseconds
         val positionInMs = (from * 1000) / (recordingConfig.sampleRate * recordingConfig.channels * (if (recordingConfig.encoding == "pcm_8bit") 8 else 16) / 8)
 
-        // Calculate power level for the current chunk
-        val soundLevel = calculatePowerLevel(audioData, length)
+        // Calculate power level (using concise expression)
+        val soundLevel = if (isSilent) -160.0f else audioDataEncoder.calculatePowerLevel(audioData, length)
 
         mainHandler.post {
             try {
@@ -609,51 +433,145 @@ class AudioRecorderManager(
     }
 
     /**
-     * Calculates the power level (dBFS) of the audio data.
-     * Assumes PCM 16-bit encoding.
-     *
-     * @param audioData The byte array containing audio data.
-     * @param bytesRead The number of bytes read into the audioData buffer.
-     * @return The power level in dBFS (typically -160.0 to 0.0). Returns -160.0 for silence.
+     * Releases all resources used by the recorder.
+     * Should be called when the module is being destroyed.
      */
-    private fun calculatePowerLevel(audioData: ByteArray, bytesRead: Int): Float {
-        if (bytesRead <= 0 || audioData.isEmpty()) {
-            return -160.0f // Represent silence or no data
+    fun release() {
+        try {
+            // If recording is active, stop it properly
+            if (isRecording.get()) {
+                // Create a simple promise to handle the result without callback
+                val dummyPromise = object : Promise {
+                    override fun resolve(value: Any?) {
+                        Log.d(Constants.TAG, "Recording stopped during release")
+                    }
+                    
+                    override fun reject(code: String, message: String?, cause: Throwable?) {
+                        Log.e(Constants.TAG, "Error stopping recording during release: $message", cause)
+                    }
+                }
+                
+                // Use stopRecording which will handle full cleanup
+                stopRecording(dummyPromise)
+            } else {
+                // Not recording, just clean up resources
+                cleanupResources()
+            }
+            
+            Log.d(Constants.TAG, "AudioRecorderManager fully released")
+        } catch (e: Exception) {
+            Log.e(Constants.TAG, "Error during AudioRecorderManager release", e)
         }
-
-        // Assuming PCM 16-bit, so 2 bytes per sample
-        val shorts = ShortArray(bytesRead / 2)
-        // Ensure we only process the valid portion of the audioData buffer
-        val byteBuffer = java.nio.ByteBuffer.wrap(audioData, 0, bytesRead).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-        byteBuffer.asShortBuffer().get(shorts)
-
-        if (shorts.isEmpty()) {
-             return -160.0f // Represent silence
-        }
-
-        var sumOfSquares: Double = 0.0
-        for (sample in shorts) {
-            val normalizedSample = sample / 32767.0 // Normalize sample to -1.0 to 1.0
-            sumOfSquares += normalizedSample * normalizedSample
-        }
-
-        val rms = kotlin.math.sqrt(sumOfSquares / shorts.size)
-
-        // Handle RMS of 0 (silence) to avoid log10(0)
-        if (rms < 1e-9) { // Use a small epsilon to check for effective silence
-            return -160.0f
-        }
-
-        // Convert RMS to dBFS (dB relative to full scale)
-        val dbfs = 20.0 * kotlin.math.log10(rms)
-
-        // Clamp the value to a minimum of -160 dBFS, maximum of 0 dBFS
-        return dbfs.toFloat().coerceIn(-160.0f, 0.0f)
     }
 
-    private fun getCompressedAudioDuration(file: File?): Long {
-        // Placeholder function for fetching duration from a compressed audio file
-        // This would depend on how you store or can retrieve duration info for compressed formats
-        return 0L // Implement this based on your specific requirements
+    /**
+     * Toggles between sending actual audio data and silence
+     */
+    fun toggleSilence() {
+        isSilent = !isSilent
+        Log.d(Constants.TAG, "Silence mode toggled: $isSilent")
+    }
+
+    /**
+     * Creates an AudioRecord instance with the given configuration
+     * @param config The recording configuration
+     * @param audioFormat The audio format to use
+     * @param promise Promise to reject if initialization fails
+     * @return The created AudioRecord instance or null if failed
+     */
+    private fun createAudioRecord(
+        config: RecordingConfig,
+        audioFormat: Int,
+        promise: Promise
+    ): AudioRecord? {
+        // Double check permission again directly before creating AudioRecord
+        if (!permissionUtils.checkRecordingPermission()) {
+            promise.reject("PERMISSION_DENIED", "Recording permission has not been granted", null)
+            return null
+        }
+        
+        // Always use VOICE_COMMUNICATION for better echo cancellation
+        val audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION
+        
+        val record = AudioRecord(
+            audioSource, // Using VOICE_COMMUNICATION for built-in echo cancellation
+            config.sampleRate,
+            if (config.channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO,
+            audioFormat,
+            bufferSizeInBytes
+        )
+        
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            promise.reject(
+                "INITIALIZATION_FAILED",
+                "Failed to initialize the audio recorder",
+                null
+            )
+            return null
+        }
+        
+        return record
+    }
+
+    /**
+     * Creates a new audio file with a unique identifier and writes the WAV header
+     * @param fileExtension The file extension to use
+     * @param config The recording configuration
+     * @return The created File object or null if creation failed
+     */
+    private fun createAndPrepareAudioFile(fileExtension: String, config: RecordingConfig): File? {
+        // Generate a unique ID for this recording
+        val uuid = java.util.UUID.randomUUID().toString()
+        streamUuid = uuid
+        
+        // Create the file
+        val file = File(filesDir, "audio_${uuid}.${fileExtension}")
+        
+        // Write the WAV header
+        try {
+            FileOutputStream(file, true).use { fos ->
+                audioFileHandler.writeWavHeader(fos, config.sampleRate, config.channels, when (config.encoding) {
+                    "pcm_8bit" -> 8
+                    "pcm_16bit" -> 16
+                    "pcm_32bit" -> 32
+                    else -> 16 // Default to 16 if the encoding is not recognized
+                })
+            }
+            return file
+        } catch (e: IOException) {
+            Log.e(Constants.TAG, "Failed to create and prepare audio file", e)
+            return null
+        }
+    }
+
+    /**
+     * Validates the audio format for the given recording configuration
+     * @param config The recording configuration
+     * @param initialFormat The initial audio format to validate
+     * @param promise Promise to reject if no supported format is found
+     * @return A pair containing the validated audio format and potentially updated recording config
+     */
+    private fun validateAudioFormat(
+        config: RecordingConfig,
+        initialFormat: Int,
+        promise: Promise
+    ): Pair<Int, RecordingConfig>? {
+        var audioFormat = initialFormat
+        var updatedConfig = config
+        
+        // Check if selected audio format is supported
+        if (!audioDataEncoder.isAudioFormatSupported(config.sampleRate, config.channels, audioFormat, permissionUtils)) {
+            Log.e(Constants.TAG, "Selected audio format not supported, falling back to 16-bit PCM")
+            audioFormat = AudioFormat.ENCODING_PCM_16BIT
+            
+            if (!audioDataEncoder.isAudioFormatSupported(config.sampleRate, config.channels, audioFormat, permissionUtils)) {
+                promise.reject("INITIALIZATION_FAILED", "Failed to initialize audio recorder with any supported format", null)
+                return null
+            }
+            
+            updatedConfig = config.copy(encoding = "pcm_16bit")
+        }
+        
+        return Pair(audioFormat, updatedConfig)
     }
 }

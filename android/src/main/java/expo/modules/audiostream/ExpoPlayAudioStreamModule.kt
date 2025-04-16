@@ -1,19 +1,20 @@
 package expo.modules.audiostream
 
+import android.Manifest
 import android.os.Build
-import expo.modules.kotlin.Promise
-import expo.modules.kotlin.modules.Module
-import expo.modules.kotlin.modules.ModuleDefinition
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.RequiresApi
 import expo.modules.interfaces.permissions.Permissions
-import android.Manifest
+import expo.modules.kotlin.Promise
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
 
 
 class ExpoPlayAudioStreamModule : Module(), EventSender {
     private lateinit var audioRecorderManager: AudioRecorderManager
     private lateinit var audioPlaybackManager: AudioPlaybackManager
+    private lateinit var wavAudioPlayer: WavAudioPlayer
 
     @RequiresApi(Build.VERSION_CODES.R)
     override fun definition() = ModuleDefinition {
@@ -29,18 +30,29 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         // Initialize managers for playback and for recording
         initializeManager()
         initializePlaybackManager()
+        initializeWavPlayer()
 
         OnCreate {
         }
 
         OnDestroy {
+            // Module is being destroyed (app shutdown)
+            // Just clean up resources without reinitialization
             audioPlaybackManager.runOnDispose()
+            wavAudioPlayer.release()
+            audioRecorderManager.release()
         }
 
         Function("destroy") {
+            // User explicitly called destroy - clean up and reinitialize for reuse
             audioPlaybackManager.runOnDispose()
+            wavAudioPlayer.release()
+            audioRecorderManager.release()
+            
+            // Reinitialize all managers so the module can be used again
             initializeManager()
             initializePlaybackManager()
+            initializeWavPlayer()
         }
 
         AsyncFunction("startRecording") { options: Map<String, Any?>, promise: Promise ->
@@ -121,7 +133,11 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         }
 
         AsyncFunction("playWav") { chunk: String, promise: Promise ->
-            audioPlaybackManager.playAudio(chunk, AudioPlaybackManager.SUSPEND_SOUND_EVENT_TURN_ID, promise)
+            wavAudioPlayer.playWavFile(chunk, promise)
+        }
+
+        AsyncFunction("stopWav") { promise: Promise ->
+            wavAudioPlayer.stopWavPlayback(promise)
         }
 
         AsyncFunction("stopSound") { promise: Promise -> audioPlaybackManager.stopPlayback(promise) }
@@ -146,7 +162,8 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         }
 
         Function("toggleSilence") {
-            // not applicable for android
+            // Just toggle silence without returning any value
+            audioRecorderManager.toggleSilence()
         }
 
         AsyncFunction("setSoundConfig") { config: Map<String, Any?>, promise: Promise ->
@@ -183,12 +200,23 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
             appContext.reactContext ?: throw IllegalStateException("Android context not available")
         val permissionUtils = PermissionUtils(androidContext)
         val audioEncoder = AudioDataEncoder()
+        val audioEffectsManager = AudioEffectsManager()
         audioRecorderManager =
-            AudioRecorderManager(androidContext.filesDir, permissionUtils, audioEncoder, this)
+            AudioRecorderManager(
+                androidContext.filesDir,
+                permissionUtils, 
+                audioEncoder, 
+                this,
+                audioEffectsManager
+            )
     }
 
     private fun initializePlaybackManager() {
         audioPlaybackManager = AudioPlaybackManager(this)
+    }
+
+    private fun initializeWavPlayer() {
+        wavAudioPlayer = WavAudioPlayer()
     }
 
     override fun sendExpoEvent(eventName: String, params: Bundle) {
