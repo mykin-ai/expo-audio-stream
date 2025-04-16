@@ -70,9 +70,9 @@ const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (even
 // audioSubscription.remove();
 ```
 
-### Simultaneous Recording and Playback ⚠️ (iOS only)
+### Simultaneous Recording and Playback
 
-These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
+These methods are designed for scenarios where you need to record and play audio at the same time:
 
 ```javascript
 import { ExpoPlayAudioStream, EncodingTypes, PlaybackModes } from 'expo-audio-stream';
@@ -157,9 +157,9 @@ The Expo Play Audio Stream module provides the following methods:
   - Android: sampleRate: 44100, playbackMode: 'regular'
   - iOS: sampleRate: 44100.0, playbackMode: 'regular'
 
-### Simultaneous Recording and Playback ⚠️ (iOS only)
+### Simultaneous Recording and Playback
 
-These methods are specifically designed for scenarios where you need to record and play audio at the same time. Currently only available on iOS:
+These methods are specifically designed for scenarios where you need to record and play audio at the same time:
 
 - `startMicrophone(recordingConfig: RecordingConfig)`: Starts microphone streaming with voice processing enabled. Returns a promise that resolves to an object containing the recording result and a subscription to audio events. Throws an error if the recording fails to start.
 
@@ -176,6 +176,8 @@ These methods are specifically designed for scenarios where you need to record a
 - `clearSoundQueueByTurnId(turnId: string)`: Clears the sound queue for a specific turn ID in simultaneous mode. Throws an error if the sound queue fails to clear.
 
 - `playWav(wavBase64: string)`: Plays a WAV format audio file from base64 encoded data. Unlike playSound(), this method plays the audio directly without queueing. The audio data should be base64 encoded WAV format. Throws an error if the WAV audio fails to play.
+
+- `toggleSilence()`: Toggles the silence state of the microphone during recording. This can be useful for temporarily muting the microphone without stopping the recording session. Throws an error if the microphone fails to toggle silence.
 
 - `promptMicrophoneModes()`: Prompts the user to select the microphone mode (iOS specific feature).
 
