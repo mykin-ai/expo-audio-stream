@@ -1,21 +1,84 @@
 package expo.modules.audiostream
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.app.ActivityCompat
 import expo.modules.interfaces.permissions.Permissions
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import kotlin.math.log
 
 
 class ExpoPlayAudioStreamModule : Module(), EventSender {
     private lateinit var audioRecorderManager: AudioRecorderManager
     private lateinit var audioPlaybackManager: AudioPlaybackManager
     private lateinit var wavAudioPlayer: WavAudioPlayer
+    private lateinit var audioManager: AudioManager
 
+    // Ensure callbacks are delivered on the main thread
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    private val reportedGroups = mutableSetOf<String>()
+
+    /** Map every device type to a logical group key */
+    private fun groupKey(type: Int): String = when (type) {
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "BLUETOOTH"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_USB_HEADSET   -> "WIRED"
+        else -> type.toString() // fallback, treats every other type separately
+    }
+
+    // We care about these types – includes both SCO and A2DP but we will collapse them into one group
+    private val interestingTypes = setOf(
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_USB_HEADSET
+    )
+
+    private val audioCallCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+            val firstOfGroup = addedDevices?.filter { d ->
+                d.type in interestingTypes && reportedGroups.add(groupKey(d.type))
+            }
+            if (firstOfGroup?.isNotEmpty()==true) {
+                Log.d("ExpoAudioCallback",  "AudioDeviceCallback ➜ ADDED")
+                val params = Bundle()
+                params.putString("reason", "newDeviceAvailable")
+                sendExpoEvent(Constants.DEVICE_RECONNECTED_EVENT_NAME, params)
+            }
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+            val lastOfGroup = removedDevices?.filter { d ->
+                d.type in interestingTypes && reportedGroups.remove(groupKey(d.type))
+            }
+            if (lastOfGroup?.isNotEmpty() == true) {
+                Log.d("ExpoAudioCallback", "AudioDeviceCallback ➜ REMOVED")
+                audioPlaybackManager.stopPlayback(null)
+                val params = Bundle()
+                params.putString("reason", "oldDeviceUnavailable")
+                sendExpoEvent(Constants.DEVICE_RECONNECTED_EVENT_NAME, params)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     @RequiresApi(Build.VERSION_CODES.R)
     override fun definition() = ModuleDefinition {
         Name("ExpoPlayAudioStream")
@@ -33,9 +96,13 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
         initializeWavPlayer()
 
         OnCreate {
+            audioManager = appContext.reactContext?.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.registerAudioDeviceCallback(audioCallCallback, mainHandler)
         }
 
         OnDestroy {
+            reportedGroups.clear()
+            audioManager.unregisterAudioDeviceCallback(audioCallCallback)
             // Module is being destroyed (app shutdown)
             // Just clean up resources without reinitialization
             audioPlaybackManager.runOnDispose()
