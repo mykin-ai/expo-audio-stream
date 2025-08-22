@@ -490,7 +490,12 @@ class SoundPlayer {
                 self.audioQueue.removeFirst()
 
                 // Schedule the buffer for playback with a completion handler
-                self.audioPlayerNode.scheduleBuffer(buffer) {
+                self.audioPlayerNode.scheduleBuffer(buffer) { [weak self] in
+                    guard let self = self else {
+                        promise(nil)
+                        return
+                    }
+                    
                     // Decrement the count of segments left to play
                     self.segmentsLeftToPlay -= 1
                     // Check if this is the final segment in the current sequence
