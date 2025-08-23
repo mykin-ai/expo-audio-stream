@@ -454,7 +454,7 @@ class SoundPlayer {
                 }
                 
                 // ✅ Prevent queue overflow
-                guard self.audioQueue.count < 8 else {
+                guard self.audioQueue.count < 20 else {
                     resolver(["status": "queue_full"])
                     return
                 }
