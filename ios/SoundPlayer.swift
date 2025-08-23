@@ -430,10 +430,7 @@ class SoundPlayer {
                 try ensureAudioEngineIsSetup()
             }
 
-            // ✅ Process audio chunk with memory protection
-            guard let buffer = try autoreleasepool(invoking: {
-                return try processAudioChunk(base64String, commonFormat: commonFormat)
-            }) else {
+            guard let buffer = try processAudioChunk(base64String, commonFormat: commonFormat) else {
                 Logger.debug("[SoundPlayer] Failed to process audio chunk")
                 throw SoundPlayerError.invalidBase64String
             }
