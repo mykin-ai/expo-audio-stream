@@ -424,58 +424,38 @@ class SoundPlayer {
             resolver(nil)
             return
         }
-
+        
         do {
             if !self.isAudioEngineIsSetup {
                 try ensureAudioEngineIsSetup()
             }
-
+            
             guard let buffer = try processAudioChunk(base64String, commonFormat: commonFormat) else {
                 Logger.debug("[SoundPlayer] Failed to process audio chunk")
                 throw SoundPlayerError.invalidBase64String
             }
-
+            
             // Enable voice processing for voice processing mode just before we start playback
             let isFirstChunk = self.audioQueue.isEmpty && self.segmentsLeftToPlay == 0
             if isFirstChunk && config.playbackMode == .voiceProcessing {
+                // For voice processing, we need to stop the engine first, then enable voice processing
                 let success = setupVoiceProcessingForPlayback()
                 if !success {
                     Logger.debug("[SoundPlayer] Continuing without voice processing")
                 }
             }
-
+                        
             let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
-            
-            // ✅ Use bufferAccessQueue to prevent concurrent access crashes
-            bufferAccessQueue.async { [weak self] in
-                guard let self = self else { 
-                    resolver(["status": "player_deallocated"])
-                    return 
-                }
-                
-                // ✅ Prevent queue overflow
-                guard self.audioQueue.count < 20 else {
-                    resolver(["status": "queue_full"])
-                    return
-                }
-                
-                self.audioQueue.append(bufferTuple)
-                
-                if self.segmentsLeftToPlay == 0 && strTurnId != self.suspendSoundEventTurnId {
-                    DispatchQueue.main.async {
-                        self.delegate?.onSoundStartedPlaying()
-                    }
-                }
-                self.segmentsLeftToPlay += 1
-                
-                // If not already playing, start playback
-                if self.audioQueue.count == 1 {
-                    Logger.debug("[SoundPlayer] Starting playback [\(self.audioQueue.count)]")
-                    // playNextInQueue already uses bufferAccessQueue, so call directly
-                    self.playNextInQueue()
-                }
+            audioQueue.append(bufferTuple)
+            if self.segmentsLeftToPlay == 0 && strTurnId != suspendSoundEventTurnId {
+                self.delegate?.onSoundStartedPlaying()
             }
-            
+            self.segmentsLeftToPlay += 1
+            // If not already playing, start playback
+            if audioQueue.count == 1 {
+                Logger.debug("[SoundPlayer] Starting playback [ \(audioQueue.count)]")
+                playNextInQueue()
+            }
         } catch {
             Logger.debug("[SoundPlayer] Failed to enqueue audio chunk: \(error.localizedDescription)")
             rejecter("ERROR_SOUND_PLAYER", "Failed to enqueue audio chunk: \(error.localizedDescription)", nil)
@@ -495,7 +475,7 @@ class SoundPlayer {
         }
                 
         Logger.debug("[SoundPlayer] Playing audio [ \(audioQueue.count)]")
-        
+          
         // Start the audio player node if it's not already playing
         if !self.audioPlayerNode.isPlaying {
             Logger.debug("[SoundPlayer] Starting Player")
@@ -549,3 +529,4 @@ class SoundPlayer {
         }
     }
 }
+
