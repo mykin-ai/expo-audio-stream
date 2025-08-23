@@ -542,9 +542,11 @@ class SoundPlayer {
                             }
                         }
                         
-                        // Recursively play the next chunk if not interrupted and queue is not empty
-                        if !self.isInterrupted && !self.audioQueue.isEmpty {
-                            self.playNextInQueue()
+                        // FIXED: Move the recursive call back to bufferAccessQueue to prevent race conditions
+                        self.bufferAccessQueue.async {
+                            if !self.isInterrupted && !self.audioQueue.isEmpty {
+                                self.playNextInQueue()
+                            }
                         }
                     }
                 }
