@@ -491,38 +491,41 @@ class SoundPlayer {
 
                 // Schedule the buffer for playback with a completion handler
                 self.audioPlayerNode.scheduleBuffer(buffer) { [weak self] in
-                    guard let self = self else {
-                        promise(nil)
-                        return
-                    }
-                    
-                    // Decrement the count of segments left to play
-                    self.segmentsLeftToPlay -= 1
-                    // Check if this is the final segment in the current sequence
-                    let isFinalSegment = self.segmentsLeftToPlay == 0
-                    
-                    // Notify delegate about playback completion (unless using the suspend events ID)
-                    if turnId != self.suspendSoundEventTurnId {
-                        self.delegate?.onSoundChunkPlayed(isFinalSegment)
-                    }
-                    // Resolve the promise to indicate successful playback
-                    promise(nil)
-                    
-                    // If this is the final segment and we're in voiceProcessing mode,
-                    // stop the engine and disable voice processing
-                    if isFinalSegment && self.config.playbackMode == .voiceProcessing {
-                        Logger.debug("[SoundPlayer] Final segment in voice processing mode, stopping engine")
-                        if let engine = self.audioEngine, engine.isRunning {
-                            engine.stop()
-                            // Disable voice processing after stopping the engine
-                            try? self.disableVoiceProcessing()
-                            self.isAudioEngineIsSetup = false
+                    // ✅ Move to main queue to avoid blocking Core Audio's realtime thread
+                    DispatchQueue.main.async {
+                        guard let self = self else {
+                            promise(nil)
+                            return
                         }
-                    }
-                    
-                    // Recursively play the next chunk if not interrupted and queue is not empty
-                    if !self.isInterrupted && !self.audioQueue.isEmpty {
-                        self.playNextInQueue()
+                        
+                        // Decrement the count of segments left to play
+                        self.segmentsLeftToPlay -= 1
+                        // Check if this is the final segment in the current sequence
+                        let isFinalSegment = self.segmentsLeftToPlay == 0
+                        
+                        // ✅ Notify delegate about playback completion on main thread (unless using the suspend events ID)
+                        if turnId != self.suspendSoundEventTurnId {
+                            self.delegate?.onSoundChunkPlayed(isFinalSegment)
+                        }
+                        // Resolve the promise to indicate successful playback
+                        promise(nil)
+                        
+                        // If this is the final segment and we're in voiceProcessing mode,
+                        // stop the engine and disable voice processing
+                        if isFinalSegment && self.config.playbackMode == .voiceProcessing {
+                            Logger.debug("[SoundPlayer] Final segment in voice processing mode, stopping engine")
+                            if let engine = self.audioEngine, engine.isRunning {
+                                engine.stop()
+                                // Disable voice processing after stopping the engine
+                                try? self.disableVoiceProcessing()
+                                self.isAudioEngineIsSetup = false
+                            }
+                        }
+                        
+                        // Recursively play the next chunk if not interrupted and queue is not empty
+                        if !self.isInterrupted && !self.audioQueue.isEmpty {
+                            self.playNextInQueue()
+                        }
                     }
                 }
             }
