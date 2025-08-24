@@ -469,11 +469,6 @@ class SoundPlayer {
     /// 3. Scheduling the next audio buffer for playback
     /// 4. Handling completion callbacks and recursively playing the next chunk
     private func playNextInQueue() {
-        // Exit if there are no audio chunks in the queue
-        guard !audioQueue.isEmpty else {
-            return
-        }
-                
         Logger.debug("[SoundPlayer] Playing audio [ \(audioQueue.count)]")
           
         // Start the audio player node if it's not already playing
@@ -484,6 +479,12 @@ class SoundPlayer {
         
         // Use a dedicated queue for buffer access to avoid blocking the main thread
         self.bufferAccessQueue.async {
+            // Check if queue is empty INSIDE the async block to avoid race conditions
+            guard !self.audioQueue.isEmpty else {
+                Logger.debug("[SoundPlayer] Queue is empty, nothing to play")
+                return
+            }
+
             // Get the first buffer tuple from the queue (buffer, promise, turnId)
             if let (buffer, promise, turnId) = self.audioQueue.first {
                 // Remove the buffer from the queue immediately to avoid playing it twice
@@ -500,6 +501,7 @@ class SoundPlayer {
                         
                         // Decrement the count of segments left to play
                         self.segmentsLeftToPlay -= 1
+
                         // Check if this is the final segment in the current sequence
                         let isFinalSegment = self.segmentsLeftToPlay == 0
                         
@@ -507,6 +509,7 @@ class SoundPlayer {
                         if turnId != self.suspendSoundEventTurnId {
                             self.delegate?.onSoundChunkPlayed(isFinalSegment)
                         }
+
                         // Resolve the promise to indicate successful playback
                         promise(nil)
                         
