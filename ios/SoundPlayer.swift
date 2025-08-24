@@ -444,6 +444,13 @@ class SoundPlayer {
                     Logger.debug("[SoundPlayer] Continuing without voice processing")
                 }
             }
+
+            // ✅ Queue overflow protection (e.g., max 64 chunks)
+            guard self.audioQueue.count < 64 else {
+                Logger.debug("[SoundPlayer] Queue full, dropping chunk")
+                resolver(["status": "queue_full"])
+                return
+            }
                         
             let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
             audioQueue.append(bufferTuple)
