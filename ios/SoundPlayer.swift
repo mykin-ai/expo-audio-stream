@@ -10,6 +10,11 @@ class SoundPlayer {
     
     private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue")
     
+    // Jitter buffer configuration
+    private let minBufferLevel = 3
+    private let maxBufferLevel = 64
+    private var isBuffering = false
+    
     private var audioQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock, turnId: String)] = []  // Queue for audio segments
     // needed to track segments in progress in order to send playbackevents properly
     private var segmentsLeftToPlay: Int = 0
@@ -446,22 +451,35 @@ class SoundPlayer {
             }
 
             // ✅ Queue overflow protection (e.g., max 64 chunks)
-            guard self.audioQueue.count < 64 else {
-                Logger.debug("[SoundPlayer] Queue full, dropping chunk")
+            guard self.audioQueue.count < maxBufferLevel else {
+                Logger.debug("[SoundPlayer] Queue full, rejecting chunk")
                 resolver(["status": "queue_full"])
                 return
             }
                         
             let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
+            
             audioQueue.append(bufferTuple)
+            
             if self.segmentsLeftToPlay == 0 && strTurnId != suspendSoundEventTurnId {
                 self.delegate?.onSoundStartedPlaying()
             }
+            
             self.segmentsLeftToPlay += 1
-            // If not already playing, start playback
-            if audioQueue.count == 1 {
-                Logger.debug("[SoundPlayer] Starting playback [ \(audioQueue.count)]")
-                playNextInQueue()
+
+            // ✅ Resume from buffering if we have enough chunks
+            bufferAccessQueue.async {
+                if self.isBuffering && self.audioQueue.count >= self.minBufferLevel {
+                    Logger.debug("[SoundPlayer] Buffer recovered, resuming playback")
+                    self.isBuffering = false
+                    self.audioPlayerNode.play() // Resume from pause
+                    self.playNextInQueue()
+                }
+                // Original logic: start if this is the first chunk
+                else if self.audioQueue.count == 1 && !self.isBuffering {
+                    Logger.debug("[SoundPlayer] Starting playback [ \(self.audioQueue.count)]")
+                    self.playNextInQueue()
+                }
             }
         } catch {
             Logger.debug("[SoundPlayer] Failed to enqueue audio chunk: \(error.localizedDescription)")
@@ -476,12 +494,20 @@ class SoundPlayer {
     /// 3. Scheduling the next audio buffer for playback
     /// 4. Handling completion callbacks and recursively playing the next chunk
     private func playNextInQueue() {
-        Logger.debug("[SoundPlayer] Playing audio [ \(audioQueue.count)]")
+        Logger.debug("[SoundPlayer] Playing audio [buffered: \(audioQueue.count)]")
           
         // Start the audio player node if it's not already playing
         if !self.audioPlayerNode.isPlaying {
-            Logger.debug("[SoundPlayer] Starting Player")
+            // wait for buffer to fill
+            guard audioQueue.count >= minBufferLevel else {
+                Logger.debug("[SoundPlayer] Buffering...")
+                isBuffering = true
+                return
+            }
+            
+            Logger.debug("[SoundPlayer] Starting Player with \(audioQueue.count) buffered chunks")
             self.audioPlayerNode.play()
+            isBuffering = false
         }
         
         // Use a dedicated queue for buffer access to avoid blocking the main thread
@@ -508,6 +534,15 @@ class SoundPlayer {
                         
                         // Decrement the count of segments left to play
                         self.segmentsLeftToPlay -= 1
+
+                        // ✅ Check for buffer underrun mid-playback
+                        if self.audioQueue.count < self.minBufferLevel && self.segmentsLeftToPlay > 0 {
+                            Logger.debug("[SoundPlayer] Buffer underrun detected, pausing playback")
+                            self.audioPlayerNode.pause()
+                            self.isBuffering = true
+                            // Don't continue recursion - wait for buffer to refill
+                            return
+                        }
 
                         // Check if this is the final segment in the current sequence
                         let isFinalSegment = self.segmentsLeftToPlay == 0
@@ -542,4 +577,3 @@ class SoundPlayer {
         }
     }
 }
-
