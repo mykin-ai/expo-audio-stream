@@ -22,6 +22,8 @@ class SoundPlayer {
   
     private var audioPlaybackFormat: AVAudioFormat!
     private var config: SoundConfig
+
+    private let minBufferThreshold = 5 // buffer at least 5 chunks before playing
     
     init(config: SoundConfig = SoundConfig()) {
         self.config = config
@@ -444,16 +446,25 @@ class SoundPlayer {
                     Logger.debug("[SoundPlayer] Continuing without voice processing")
                 }
             }
+
+            // ✅ Queue overflow protection (e.g., max 64 chunks)
+            guard self.audioQueue.count < 64 else {
+                Logger.debug("[SoundPlayer] Queue full, dropping chunk")
+                resolver(["status": "queue_full"])
+                return
+            }
                         
             let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
             audioQueue.append(bufferTuple)
+
             if self.segmentsLeftToPlay == 0 && strTurnId != suspendSoundEventTurnId {
                 self.delegate?.onSoundStartedPlaying()
             }
             self.segmentsLeftToPlay += 1
-            // If not already playing, start playback
-            if audioQueue.count == 1 {
-                Logger.debug("[SoundPlayer] Starting playback [ \(audioQueue.count)]")
+
+            // 🔑 Only start playback when we have at least `minBufferThreshold` chunks
+            if audioQueue.count == minBufferThreshold {
+                Logger.debug("[SoundPlayer] Reached buffer threshold (\(minBufferThreshold)), starting playback")
                 playNextInQueue()
             }
         } catch {
@@ -470,7 +481,7 @@ class SoundPlayer {
     /// 4. Handling completion callbacks and recursively playing the next chunk
     private func playNextInQueue() {
         Logger.debug("[SoundPlayer] Playing audio [ \(audioQueue.count)]")
-          
+        
         // Start the audio player node if it's not already playing
         if !self.audioPlayerNode.isPlaying {
             Logger.debug("[SoundPlayer] Starting Player")
@@ -504,7 +515,7 @@ class SoundPlayer {
 
                         // Check if this is the final segment in the current sequence
                         let isFinalSegment = self.segmentsLeftToPlay == 0
-                        
+
                         // ✅ Notify delegate about playback completion on main thread (unless using the suspend events ID)
                         if turnId != self.suspendSoundEventTurnId {
                             self.delegate?.onSoundChunkPlayed(isFinalSegment)
@@ -512,7 +523,7 @@ class SoundPlayer {
 
                         // Resolve the promise to indicate successful playback
                         promise(nil)
-                        
+
                         // If this is the final segment and we're in voiceProcessing mode,
                         // stop the engine and disable voice processing
                         if isFinalSegment && self.config.playbackMode == .voiceProcessing {
@@ -526,7 +537,8 @@ class SoundPlayer {
                         }
                         
                         // Recursively play the next chunk if not interrupted and queue is not empty
-                        if !self.isInterrupted && !self.audioQueue.isEmpty {
+                        // Keep playing until queue drops below threshold
+                        if !self.isInterrupted && (!self.audioQueue.isEmpty || self.audioQueue.count >= self.minBufferThreshold) {
                             self.playNextInQueue()
                         }
                     }
