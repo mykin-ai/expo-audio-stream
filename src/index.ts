@@ -726,6 +726,9 @@ export {
   IFrameProcessor,
   IQualityMonitor,
   BufferedStreamConfig,
+  SmartBufferConfig,
+  SmartBufferMode,
+  NetworkConditions,
 };
 
 // Export audio processing modules

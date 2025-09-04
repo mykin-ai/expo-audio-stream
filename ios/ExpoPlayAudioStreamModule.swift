@@ -74,16 +74,21 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
         ///   - promise: A promise to resolve with the recording settings or reject with an error.
         AsyncFunction("startRecording") { (options: [String: Any], promise: Promise) in
             // Extract settings from provided options, using default values if necessary
-            let sampleRate = options["sampleRate"] as? Double ?? 16000.0 // it fails if not 48000, why?
+            let requestedSampleRate = options["sampleRate"] as? Double ?? 48000.0 // Default to 48kHz for iOS
             let numberOfChannels = options["channelConfig"] as? Int ?? 1 // Mono channel configuration
             let bitDepth = options["audioFormat"] as? Int ?? 16 // 16bits
             let interval = options["interval"] as? Int ?? 1000
             
+            // Get the actual sample rate that will be used (hardware may override)
+            let audioSession = AVAudioSession.sharedInstance()
+            let actualSampleRate = audioSession.sampleRate > 0 ? audioSession.sampleRate : requestedSampleRate
+            
+            Logger.debug("Requested sample rate: \(requestedSampleRate), actual hardware rate: \(actualSampleRate)")
             
             // Create recording settings
             let settings = RecordingSettings(
-                sampleRate: sampleRate,
-                desiredSampleRate: sampleRate,
+                sampleRate: actualSampleRate,
+                desiredSampleRate: requestedSampleRate,
                 numberOfChannels: numberOfChannels,
                 bitDepth: bitDepth,
                 maxRecentDataDuration: nil,
@@ -98,7 +103,7 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
                         "fileUri": result.fileUri ?? "",
                         "channels": result.channels ?? 1,
                         "bitDepth": result.bitDepth ?? 16,
-                        "sampleRate": result.sampleRate ?? 48000,
+                        "sampleRate": result.sampleRate ?? actualSampleRate,
                         "mimeType": result.mimeType ?? "",
                     ]
                     promise.resolve(resultDict)
