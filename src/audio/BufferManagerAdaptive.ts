@@ -1,5 +1,5 @@
-import { AudioBufferManager } from './BufferManagerCore';
-import { QualityMonitor } from './QualityMonitor';
+import { AudioBufferManager } from "./BufferManagerCore";
+import { QualityMonitor } from "./QualityMonitor";
 import {
   IAudioBufferConfig,
   IAudioPlayPayload,
@@ -9,7 +9,7 @@ import {
   IBufferHealthMetrics,
   Encoding,
   EncodingTypes,
-} from '../types';
+} from "../types";
 
 /**
  * Smart buffering manager that automatically adapts to network conditions
@@ -21,7 +21,7 @@ export class BufferManagerAdaptive {
   private _isBufferingEnabled: boolean = false;
   private _networkConditions: NetworkConditions = {};
   private _adaptiveThresholds: Required<
-    SmartBufferConfig['adaptiveThresholds']
+    SmartBufferConfig["adaptiveThresholds"]
   >;
   private _turnId: string;
   private _encoding: Encoding;
@@ -40,12 +40,9 @@ export class BufferManagerAdaptive {
 
     // Set default adaptive thresholds
     this._adaptiveThresholds = {
-      highLatencyMs:
-        config.adaptiveThresholds?.highLatencyMs ?? 150,
-      highJitterMs:
-        config.adaptiveThresholds?.highJitterMs ?? 50,
-      packetLossPercent:
-        config.adaptiveThresholds?.packetLossPercent ?? 1.0,
+      highLatencyMs: config.adaptiveThresholds?.highLatencyMs ?? 150,
+      highJitterMs: config.adaptiveThresholds?.highJitterMs ?? 50,
+      packetLossPercent: config.adaptiveThresholds?.packetLossPercent ?? 1.0,
     };
 
     if (config.networkConditions) {
@@ -109,15 +106,12 @@ export class BufferManagerAdaptive {
 
     // Track consecutive quality problems
     if (
-      metrics.bufferHealthState === 'degraded' ||
-      metrics.bufferHealthState === 'critical'
+      metrics.bufferHealthState === "degraded" ||
+      metrics.bufferHealthState === "critical"
     ) {
       this._consecutiveProblems++;
     } else {
-      this._consecutiveProblems = Math.max(
-        0,
-        this._consecutiveProblems - 1
-      );
+      this._consecutiveProblems = Math.max(0, this._consecutiveProblems - 1);
     }
   }
 
@@ -128,21 +122,17 @@ export class BufferManagerAdaptive {
     const previousState = this._isBufferingEnabled;
 
     switch (this._mode) {
-      case 'conservative':
-        this._isBufferingEnabled =
-          this._shouldBufferConservative();
+      case "conservative":
+        this._isBufferingEnabled = this._shouldBufferConservative();
         break;
-      case 'balanced':
-        this._isBufferingEnabled =
-          this._shouldBufferBalanced();
+      case "balanced":
+        this._isBufferingEnabled = this._shouldBufferBalanced();
         break;
-      case 'aggressive':
-        this._isBufferingEnabled =
-          this._shouldBufferAggressive();
+      case "aggressive":
+        this._isBufferingEnabled = this._shouldBufferAggressive();
         break;
-      case 'adaptive':
-        this._isBufferingEnabled =
-          this._shouldBufferAdaptive();
+      case "adaptive":
+        this._isBufferingEnabled = this._shouldBufferAdaptive();
         break;
     }
 
@@ -150,7 +140,7 @@ export class BufferManagerAdaptive {
     if (previousState !== this._isBufferingEnabled) {
       console.log(
         `[SmartBufferManager] Buffering ${
-          this._isBufferingEnabled ? 'enabled' : 'disabled'
+          this._isBufferingEnabled ? "enabled" : "disabled"
         } for turnId: ${this._turnId} (mode: ${this._mode})`
       );
     }
@@ -161,10 +151,10 @@ export class BufferManagerAdaptive {
     return (
       (this._networkConditions.latency !== undefined &&
         this._networkConditions.latency >
-          this._adaptiveThresholds.highLatencyMs * 1.5) ||
+          this._adaptiveThresholds!.highLatencyMs * 1.5) ||
       (this._networkConditions.packetLoss !== undefined &&
         this._networkConditions.packetLoss >
-          this._adaptiveThresholds.packetLossPercent * 2) ||
+          this._adaptiveThresholds!.packetLossPercent * 2) ||
       this._consecutiveProblems > 3
     );
   }
@@ -174,13 +164,13 @@ export class BufferManagerAdaptive {
     return (
       (this._networkConditions.latency !== undefined &&
         this._networkConditions.latency >
-          this._adaptiveThresholds.highLatencyMs) ||
+          this._adaptiveThresholds!.highLatencyMs) ||
       (this._networkConditions.jitter !== undefined &&
         this._networkConditions.jitter >
-          this._adaptiveThresholds.highJitterMs) ||
+          this._adaptiveThresholds!.highJitterMs) ||
       (this._networkConditions.packetLoss !== undefined &&
         this._networkConditions.packetLoss >
-          this._adaptiveThresholds.packetLossPercent) ||
+          this._adaptiveThresholds!.packetLossPercent) ||
       this._consecutiveProblems > 2
     );
   }
@@ -190,10 +180,10 @@ export class BufferManagerAdaptive {
     return (
       (this._networkConditions.latency !== undefined &&
         this._networkConditions.latency >
-          this._adaptiveThresholds.highLatencyMs * 0.7) ||
+          this._adaptiveThresholds!.highLatencyMs * 0.7) ||
       (this._networkConditions.jitter !== undefined &&
         this._networkConditions.jitter >
-          this._adaptiveThresholds.highJitterMs * 0.5) ||
+          this._adaptiveThresholds!.highJitterMs * 0.5) ||
       (this._networkConditions.packetLoss !== undefined &&
         this._networkConditions.packetLoss > 0.1) ||
       this._consecutiveProblems > 1
@@ -208,10 +198,10 @@ export class BufferManagerAdaptive {
     let shouldBuffer = this._shouldBufferBalanced();
 
     // Adapt based on recent buffer health
-    if (recentMetrics.bufferHealthState === 'critical') {
+    if (recentMetrics.bufferHealthState === "critical") {
       shouldBuffer = true; // Always buffer on critical issues
     } else if (
-      recentMetrics.bufferHealthState === 'healthy' &&
+      recentMetrics.bufferHealthState === "healthy" &&
       this._consecutiveProblems === 0
     ) {
       shouldBuffer = false; // Disable if consistently healthy
@@ -227,9 +217,7 @@ export class BufferManagerAdaptive {
     const bufferConfig: Partial<IAudioBufferConfig> =
       this._getBufferConfigForConditions();
 
-    this._bufferManager = new AudioBufferManager(
-      bufferConfig
-    );
+    this._bufferManager = new AudioBufferManager(bufferConfig);
     this._bufferManager.setTurnId(this._turnId);
     this._bufferManager.setEncoding(this._encoding);
     this._bufferManager.startPlayback();
@@ -285,14 +273,11 @@ export class BufferManagerAdaptive {
     // Adjust for jitter
     if (
       this._networkConditions.jitter !== undefined &&
-      this._networkConditions.jitter >
-        this._adaptiveThresholds.highJitterMs
+      this._networkConditions.jitter > this._adaptiveThresholds!.highJitterMs
     ) {
       // High jitter - increase buffer sizes
-      baseConfig.targetBufferMs =
-        (baseConfig.targetBufferMs || 240) * 1.5;
-      baseConfig.maxBufferMs =
-        (baseConfig.maxBufferMs || 480) * 1.5;
+      baseConfig.targetBufferMs = (baseConfig.targetBufferMs || 240) * 1.5;
+      baseConfig.maxBufferMs = (baseConfig.maxBufferMs || 480) * 1.5;
     }
 
     return baseConfig;
@@ -301,9 +286,7 @@ export class BufferManagerAdaptive {
   /**
    * Update network conditions externally (e.g., from network monitoring)
    */
-  public updateNetworkConditions(
-    conditions: Partial<NetworkConditions>
-  ): void {
+  public updateNetworkConditions(conditions: Partial<NetworkConditions>): void {
     this._networkConditions = {
       ...this._networkConditions,
       ...conditions,
@@ -326,7 +309,7 @@ export class BufferManagerAdaptive {
       underrunCount: 0,
       overrunCount: 0,
       averageJitter: this._networkConditions.jitter || 0,
-      bufferHealthState: 'idle',
+      bufferHealthState: "idle",
       adaptiveAdjustmentsCount: 0,
     };
   }

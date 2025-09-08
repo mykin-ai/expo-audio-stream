@@ -1,0 +1,4 @@
+echo "Running build check..."
+CI=1 yarn build || exit 1
+CI=1 yarn build plugin || exit 1
+
