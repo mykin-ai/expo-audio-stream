@@ -1,4 +1,4 @@
-name: Publish package to GitHub Packages
+name: Publish package to GitHub Packages and npm
 on:
   workflow_dispatch:
   release:
@@ -17,6 +17,7 @@ jobs:
           registry-url: "https://npm.pkg.github.com"
           scope: "@mykin-ai"
         env:
+          NPM_PUBLISH_REGISTRY: https://npm.pkg.github.com
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: yarn
       - run: yarn build
@@ -24,3 +25,13 @@ jobs:
       - run: yarn npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18.18.2"
+          registry-url: "https://registry.npmjs.org"
+          scope: "@mykin-ai"
+          always-auth: true
+      - run: yarn npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPMJS_TOKEN }}
+          NPM_PUBLISH_REGISTRY: https://registry.npmjs.org
