@@ -26,7 +26,10 @@ class AudioSessionManager {
     
     private var audioPlayerNode: AVAudioPlayerNode?
     
-    private let audioFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)
+    // Dynamic audio format based on hardware capabilities
+    private var audioFormat: AVAudioFormat? {
+        return getOptimalAudioFormat()
+    }
 
     private var bufferQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock, turnId: String)] = []
     private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue") // Serial queue for thread-safe buffer access
@@ -59,6 +62,32 @@ class AudioSessionManager {
         } catch {
             print("Failed to init")
         }
+    }
+    
+    /// Determines the optimal audio format based on hardware capabilities and user preferences
+    /// - Returns: AVAudioFormat configured for the current hardware
+    private func getOptimalAudioFormat() -> AVAudioFormat? {
+        let audioSession = AVAudioSession.sharedInstance()
+        
+        // Get hardware sample rate (this is what the hardware is actually running at)
+        let hardwareSampleRate = audioSession.sampleRate
+        
+        // Prefer hardware sample rate, but fall back to common rates if needed
+        var targetSampleRate: Double
+        if hardwareSampleRate > 0 {
+            targetSampleRate = hardwareSampleRate
+        } else {
+            // Fallback to common sample rates
+            targetSampleRate = 48000.0 // Most iOS devices prefer 48kHz
+        }
+        
+        Logger.debug("Hardware sample rate: \(hardwareSampleRate), using: \(targetSampleRate)")
+        
+        // Create format that matches hardware capabilities
+        return AVAudioFormat(commonFormat: .pcmFormatFloat32, 
+                            sampleRate: targetSampleRate, 
+                            channels: 1, 
+                            interleaved: false)
     }
     
     /// Handles audio session interruptions.
@@ -201,11 +230,16 @@ class AudioSessionManager {
     /// - Returns: Processed audio buffer or nil if processing fails
     /// - Throws: Error if format is unsupported
     private func processAudioChunk(_ base64String: String, commonFormat: AVAudioCommonFormat) throws -> AVAudioPCMBuffer? {
+        guard let format = self.audioFormat else {
+            Logger.debug("[AudioSessionManager] Audio format not available")
+            throw SoundPlayerError.unsupportedFormat
+        }
+        
         switch commonFormat {
         case .pcmFormatFloat32:
-            return AudioUtils.processFloat32LEAudioChunk(base64String, audioFormat: self.audioFormat!)
+            return AudioUtils.processFloat32LEAudioChunk(base64String, audioFormat: format)
         case .pcmFormatInt16:
-            return AudioUtils.processPCM16LEAudioChunk(base64String, audioFormat: self.audioFormat!)
+            return AudioUtils.processPCM16LEAudioChunk(base64String, audioFormat: format)
         default:
             Logger.debug("[AudioSessionManager] Unsupported audio format: \(commonFormat)")
             throw SoundPlayerError.unsupportedFormat
@@ -309,7 +343,12 @@ class AudioSessionManager {
         
         audioPlayerNode = AVAudioPlayerNode()
         audioEngine.attach(audioPlayerNode!)
-        audioEngine.connect(audioPlayerNode!, to: audioEngine.mainMixerNode, format: self.audioFormat)
+        
+        guard let format = self.audioFormat else {
+            Logger.debug("Failed to get audio format for player connection")
+            return
+        }
+        audioEngine.connect(audioPlayerNode!, to: audioEngine.mainMixerNode, format: format)
     }
     
     private func scheduleNextBuffer() {

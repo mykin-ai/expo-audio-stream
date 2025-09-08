@@ -8,6 +8,10 @@ public enum SoundPlayerError: Error {
     case unsupportedFormat
 }
 
+enum AudioProcessingError: Error {
+    case invalidBase64
+}
+
 class AudioUtils {
     static func removeRIFFHeaderIfNeeded(from audioData: Data) -> Data? {
         let headerSize = 44 // The "RIFF" header is 44 bytes
@@ -282,9 +286,29 @@ class AudioUtils {
             return nil
         }
         
-        // Decode base64 string to raw data
-        guard let data = Data(base64Encoded: base64String) else {
+        // ✅ Add size check to prevent excessive memory allocation
+        guard base64String.count < 500_000 else {
+            Logger.debug("[AudioUtils] Base64 string too large: \(base64String.count) characters")
+            return nil
+        }
+        
+        // ✅ Wrap decoding in autoreleasepool for immediate cleanup
+        let data: Data
+        do {
+            data = try autoreleasepool {
+                guard let decodedData = Data(base64Encoded: base64String) else {
+                    throw AudioProcessingError.invalidBase64
+                }
+                return decodedData
+            }
+        } catch {
             Logger.debug("[AudioUtils] Failed to decode base64 string")
+            return nil
+        }
+        
+        // ✅ Validate decoded data size
+        guard data.count > 0 && data.count < 2_000_000 else {
+            Logger.debug("[AudioUtils] Invalid decoded data size: \(data.count) bytes")
             return nil
         }
         

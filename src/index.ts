@@ -1,5 +1,5 @@
-import { Subscription } from "expo-modules-core";
-import ExpoPlayAudioStreamModule from "./ExpoPlayAudioStreamModule";
+import { Subscription } from 'expo-modules-core';
+import ExpoPlayAudioStreamModule from './ExpoPlayAudioStreamModule';
 import {
   AudioDataEvent,
   AudioRecording,
@@ -10,7 +10,23 @@ import {
   Encoding,
   EncodingTypes,
   PlaybackModes,
-} from "./types";
+  // Audio jitter buffer types
+  IAudioBufferConfig,
+  IAudioPlayPayload,
+  IAudioFrame,
+  BufferHealthState,
+  IBufferHealthMetrics,
+  IAudioBufferManager,
+  IFrameProcessor,
+  IQualityMonitor,
+  BufferedStreamConfig,
+  SmartBufferConfig,
+  SmartBufferMode,
+  NetworkConditions,
+} from './types';
+
+import { AudioBufferManager } from './audio';
+import { BufferManagerAdaptive } from './audio/BufferManagerAdaptive';
 
 import {
   addAudioEventListener,
@@ -21,17 +37,35 @@ import {
   subscribeToEvent,
   DeviceReconnectedReason,
   DeviceReconnectedEventPayload,
-} from "./events";
+} from './events';
 
-const SuspendSoundEventTurnId = "suspend-sound-events";
+const SuspendSoundEventTurnId = 'suspend-sound-events';
 
 export class ExpoPlayAudioStream {
+  // Static buffer manager instances for different turn IDs
+  private static _bufferManagers: {
+    [turnId: string]: AudioBufferManager;
+  } = {};
+
+  // Static smart buffer manager instances for different turn IDs
+  private static _smartBufferManagers: {
+    [turnId: string]: BufferManagerAdaptive;
+  } = {};
+
   /**
    * Destroys the audio stream module, cleaning up all resources.
    * This should be called when the module is no longer needed.
    * It will reset all internal state and release audio resources.
    */
   static destroy() {
+    // Clean up all buffer managers
+    Object.keys(
+      ExpoPlayAudioStream._bufferManagers
+    ).forEach((turnId) => {
+      ExpoPlayAudioStream._bufferManagers[turnId].destroy();
+    });
+    ExpoPlayAudioStream._bufferManagers = {};
+
     ExpoPlayAudioStreamModule.destroy();
   }
 
@@ -41,7 +75,9 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<{recordingResult: StartRecordingResult, subscription: Subscription}>} A promise that resolves to an object containing the recording result and a subscription to audio events.
    * @throws {Error} If the recording fails to start.
    */
-  static async startRecording(recordingConfig: RecordingConfig): Promise<{
+  static async startRecording(
+    recordingConfig: RecordingConfig
+  ): Promise<{
     recordingResult: StartRecordingResult;
     subscription?: Subscription;
   }> {
@@ -49,34 +85,52 @@ export class ExpoPlayAudioStream {
 
     let subscription: Subscription | undefined;
 
-    if (onAudioStream && typeof onAudioStream == "function") {
-      subscription = addAudioEventListener(async (event: AudioEventPayload) => {
-        const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } =
-          event;
-        if (!encoded) {
-          console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
-          throw new Error("Encoded audio data is missing");
+    if (
+      onAudioStream &&
+      typeof onAudioStream == 'function'
+    ) {
+      subscription = addAudioEventListener(
+        async (event: AudioEventPayload) => {
+          const {
+            fileUri,
+            deltaSize,
+            totalSize,
+            position,
+            encoded,
+            soundLevel,
+          } = event;
+          if (!encoded) {
+            console.error(
+              `[ExpoPlayAudioStream] Encoded audio data is missing`
+            );
+            throw new Error(
+              'Encoded audio data is missing'
+            );
+          }
+          onAudioStream?.({
+            data: encoded,
+            position,
+            fileUri,
+            eventDataSize: deltaSize,
+            totalSize,
+            soundLevel,
+          });
         }
-        onAudioStream?.({
-          data: encoded,
-          position,
-          fileUri,
-          eventDataSize: deltaSize,
-          totalSize,
-          soundLevel,
-        });
-      });
+      );
     }
 
     try {
-      const recordingResult = await ExpoPlayAudioStreamModule.startRecording(
-        options
-      );
+      const recordingResult =
+        await ExpoPlayAudioStreamModule.startRecording(
+          options
+        );
       return { recordingResult, subscription };
     } catch (error) {
       console.error(error);
       subscription?.remove();
-      throw new Error(`Failed to start recording: ${error}`);
+      throw new Error(
+        `Failed to start recording: ${error}`
+      );
     }
   }
 
@@ -115,7 +169,9 @@ export class ExpoPlayAudioStream {
       );
     } catch (error) {
       console.error(error);
-      throw new Error(`Failed to stream audio chunk: ${error}`);
+      throw new Error(
+        `Failed to stream audio chunk: ${error}`
+      );
     }
   }
 
@@ -153,12 +209,18 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<void>}
    * @throws {Error} If the playback queue fails to clear.
    */
-  static async clearPlaybackQueueByTurnId(turnId: string): Promise<void> {
+  static async clearPlaybackQueueByTurnId(
+    turnId: string
+  ): Promise<void> {
     try {
-      await ExpoPlayAudioStreamModule.clearPlaybackQueueByTurnId(turnId);
+      await ExpoPlayAudioStreamModule.clearPlaybackQueueByTurnId(
+        turnId
+      );
     } catch (error) {
       console.error(error);
-      throw new Error(`Failed to clear playback queue: ${error}`);
+      throw new Error(
+        `Failed to clear playback queue: ${error}`
+      );
     }
   }
 
@@ -197,7 +259,9 @@ export class ExpoPlayAudioStream {
       await ExpoPlayAudioStreamModule.stopSound();
     } catch (error) {
       console.error(error);
-      throw new Error(`Failed to stop enqueued audio: ${error}`);
+      throw new Error(
+        `Failed to stop enqueued audio: ${error}`
+      );
     }
   }
 
@@ -211,7 +275,9 @@ export class ExpoPlayAudioStream {
       await ExpoPlayAudioStreamModule.interruptSound();
     } catch (error) {
       console.error(error);
-      throw new Error(`Failed to stop enqueued audio: ${error}`);
+      throw new Error(
+        `Failed to stop enqueued audio: ${error}`
+      );
     }
   }
 
@@ -235,14 +301,195 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<void>}
    * @throws {Error} If the sound queue fails to clear.
    */
-  static async clearSoundQueueByTurnId(turnId: string): Promise<void> {
+  static async clearSoundQueueByTurnId(
+    turnId: string
+  ): Promise<void> {
     try {
-      await ExpoPlayAudioStreamModule.clearSoundQueueByTurnId(turnId);
+      await ExpoPlayAudioStreamModule.clearSoundQueueByTurnId(
+        turnId
+      );
     } catch (error) {
       console.error(error);
-      throw new Error(`Failed to clear sound queue: ${error}`);
+      throw new Error(
+        `Failed to clear sound queue: ${error}`
+      );
     }
   }
+
+  // ============ BUFFERED AUDIO METHODS ============
+
+  /**
+   * Starts a buffered audio stream for a specific turn ID.
+   * This enables jitter buffering for improved audio quality on unreliable networks.
+   * @param {BufferedStreamConfig} config - Configuration for the buffered stream.
+   * @returns {Promise<void>}
+   * @throws {Error} If the buffered stream fails to start.
+   */
+  static async startBufferedAudioStream(
+    config: BufferedStreamConfig
+  ): Promise<void> {
+    try {
+      const bufferManager = new AudioBufferManager(
+        config.bufferConfig
+      );
+
+      bufferManager.setTurnId(config.turnId);
+      if (config.encoding) {
+        bufferManager.setEncoding(config.encoding);
+      }
+
+      // Store the buffer manager for this turn ID
+      ExpoPlayAudioStream._bufferManagers[config.turnId] =
+        bufferManager;
+
+      // Start buffered playback
+      bufferManager.startPlayback();
+
+      // Set up health monitoring if callback provided
+      if (config.onBufferHealth) {
+        const healthCallback = config.onBufferHealth;
+        setInterval(() => {
+          if (bufferManager.isPlaying()) {
+            healthCallback(
+              bufferManager.getHealthMetrics()
+            );
+          }
+        }, 1000); // Report health every second
+      }
+    } catch (error) {
+      console.error(error);
+      throw new Error(
+        `Failed to start buffered audio stream: ${error}`
+      );
+    }
+  }
+
+  /**
+   * Plays audio with jitter buffering for a specific turn ID.
+   * The stream must be started first with startBufferedAudioStream().
+   * @param {string} base64Chunk - The base64 encoded audio chunk to play.
+   * @param {string} turnId - The turn ID for the stream.
+   * @param {boolean} isFirst - Whether this is the first chunk.
+   * @param {boolean} isFinal - Whether this is the final chunk.
+   * @returns {Promise<void>}
+   * @throws {Error} If the audio chunk fails to buffer or the stream is not started.
+   */
+  static async playAudioBuffered(
+    base64Chunk: string,
+    turnId: string,
+    isFirst?: boolean,
+    isFinal?: boolean
+  ): Promise<void> {
+    try {
+      const bufferManager =
+        ExpoPlayAudioStream._bufferManagers[turnId];
+      if (!bufferManager) {
+        throw new Error(
+          `No buffered stream found for turnId: ${turnId}. Call startBufferedAudioStream() first.`
+        );
+      }
+
+      const audioPayload: IAudioPlayPayload = {
+        audioData: base64Chunk,
+        isFirst: isFirst ?? false,
+        isFinal: isFinal ?? false,
+      };
+
+      bufferManager.enqueueFrames(audioPayload);
+    } catch (error) {
+      console.error(error);
+      throw new Error(
+        `Failed to play buffered audio: ${error}`
+      );
+    }
+  }
+
+  /**
+   * Stops a buffered audio stream for a specific turn ID.
+   * @param {string} turnId - The turn ID for the stream to stop.
+   * @returns {Promise<void>}
+   * @throws {Error} If the buffered stream fails to stop.
+   */
+  static async stopBufferedAudioStream(
+    turnId: string
+  ): Promise<void> {
+    try {
+      const bufferManager =
+        ExpoPlayAudioStream._bufferManagers[turnId];
+      if (bufferManager) {
+        bufferManager.stopPlayback();
+        bufferManager.destroy();
+        delete ExpoPlayAudioStream._bufferManagers[turnId];
+      }
+
+      // Also clear the native queue for this turn ID
+      await ExpoPlayAudioStreamModule.clearSoundQueueByTurnId(
+        turnId
+      );
+    } catch (error) {
+      console.error(error);
+      throw new Error(
+        `Failed to stop buffered audio stream: ${error}`
+      );
+    }
+  }
+
+  /**
+   * Gets buffer health metrics for a specific turn ID.
+   * @param {string} turnId - The turn ID for the stream.
+   * @returns {IBufferHealthMetrics | null} Buffer health metrics or null if stream not found.
+   */
+  static getBufferHealthMetrics(
+    turnId: string
+  ): IBufferHealthMetrics | null {
+    const bufferManager =
+      ExpoPlayAudioStream._bufferManagers[turnId];
+    return bufferManager
+      ? bufferManager.getHealthMetrics()
+      : null;
+  }
+
+  /**
+   * Checks if a buffered audio stream is currently playing.
+   * @param {string} turnId - The turn ID for the stream.
+   * @returns {boolean} True if the stream is playing, false otherwise.
+   */
+  static isBufferedAudioStreamPlaying(
+    turnId: string
+  ): boolean {
+    const bufferManager =
+      ExpoPlayAudioStream._bufferManagers[turnId];
+    return bufferManager
+      ? bufferManager.isPlaying()
+      : false;
+  }
+
+  /**
+   * Updates buffer configuration for a specific turn ID.
+   * @param {string} turnId - The turn ID for the stream.
+   * @param {Partial<IAudioBufferConfig>} config - New buffer configuration.
+   * @returns {Promise<void>}
+   */
+  static async updateBufferedAudioConfig(
+    turnId: string,
+    config: Partial<IAudioBufferConfig>
+  ): Promise<void> {
+    try {
+      const bufferManager =
+        ExpoPlayAudioStream._bufferManagers[turnId];
+      if (bufferManager) {
+        bufferManager.updateConfig(config);
+        bufferManager.applyAdaptiveAdjustments();
+      }
+    } catch (error) {
+      console.error(error);
+      throw new Error(
+        `Failed to update buffer config: ${error}`
+      );
+    }
+  }
+
+  // ============ END BUFFERED AUDIO METHODS ============
 
   /**
    * Starts microphone streaming.
@@ -250,7 +497,9 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<{recordingResult: StartRecordingResult, subscription: Subscription}>} A promise that resolves to an object containing the recording result and a subscription to audio events.
    * @throws {Error} If the recording fails to start.
    */
-  static async startMicrophone(recordingConfig: RecordingConfig): Promise<{
+  static async startMicrophone(
+    recordingConfig: RecordingConfig
+  ): Promise<{
     recordingResult: StartRecordingResult;
     subscription?: Subscription;
   }> {
@@ -258,7 +507,10 @@ export class ExpoPlayAudioStream {
     try {
       const { onAudioStream, ...options } = recordingConfig;
 
-      if (onAudioStream && typeof onAudioStream == "function") {
+      if (
+        onAudioStream &&
+        typeof onAudioStream == 'function'
+      ) {
         subscription = addAudioEventListener(
           async (event: AudioEventPayload) => {
             const {
@@ -273,7 +525,9 @@ export class ExpoPlayAudioStream {
               console.error(
                 `[ExpoPlayAudioStream] Encoded audio data is missing`
               );
-              throw new Error("Encoded audio data is missing");
+              throw new Error(
+                'Encoded audio data is missing'
+              );
             }
             onAudioStream?.({
               data: encoded,
@@ -287,13 +541,18 @@ export class ExpoPlayAudioStream {
         );
       }
 
-      const result = await ExpoPlayAudioStreamModule.startMicrophone(options);
+      const result =
+        await ExpoPlayAudioStreamModule.startMicrophone(
+          options
+        );
 
       return { recordingResult: result, subscription };
     } catch (error) {
       console.error(error);
       subscription?.remove();
-      throw new Error(`Failed to start recording: ${error}`);
+      throw new Error(
+        `Failed to start recording: ${error}`
+      );
     }
   }
 
@@ -307,7 +566,9 @@ export class ExpoPlayAudioStream {
       return await ExpoPlayAudioStreamModule.stopMicrophone();
     } catch (error) {
       console.error(error);
-      throw new Error(`Failed to stop mic stream: ${error}`);
+      throw new Error(
+        `Failed to stop mic stream: ${error}`
+      );
     }
   }
 
@@ -325,24 +586,36 @@ export class ExpoPlayAudioStream {
    * @throws {Error} If encoded audio data is missing from the event
    */
   static subscribeToAudioEvents(
-    onMicrophoneStream: (event: AudioDataEvent) => Promise<void>
+    onMicrophoneStream: (
+      event: AudioDataEvent
+    ) => Promise<void>
   ): Subscription {
-    return addAudioEventListener(async (event: AudioEventPayload) => {
-      const { fileUri, deltaSize, totalSize, position, encoded, soundLevel } =
-        event;
-      if (!encoded) {
-        console.error(`[ExpoPlayAudioStream] Encoded audio data is missing`);
-        throw new Error("Encoded audio data is missing");
+    return addAudioEventListener(
+      async (event: AudioEventPayload) => {
+        const {
+          fileUri,
+          deltaSize,
+          totalSize,
+          position,
+          encoded,
+          soundLevel,
+        } = event;
+        if (!encoded) {
+          console.error(
+            `[ExpoPlayAudioStream] Encoded audio data is missing`
+          );
+          throw new Error('Encoded audio data is missing');
+        }
+        onMicrophoneStream?.({
+          data: encoded,
+          position,
+          fileUri,
+          eventDataSize: deltaSize,
+          totalSize,
+          soundLevel,
+        });
       }
-      onMicrophoneStream?.({
-        data: encoded,
-        position,
-        fileUri,
-        eventDataSize: deltaSize,
-        totalSize,
-        soundLevel,
-      });
-    });
+    );
   }
 
   /**
@@ -352,7 +625,9 @@ export class ExpoPlayAudioStream {
    * @returns {Subscription} A subscription object that can be used to unsubscribe from the events.
    */
   static subscribeToSoundChunkPlayed(
-    onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>
+    onSoundChunkPlayed: (
+      event: SoundChunkPlayedEventPayload
+    ) => Promise<void>
   ): Subscription {
     return addSoundChunkPlayedListener(onSoundChunkPlayed);
   }
@@ -392,12 +667,18 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<void>}
    * @throws {Error} If the configuration fails to update.
    */
-  static async setSoundConfig(config: SoundConfig): Promise<void> {
+  static async setSoundConfig(
+    config: SoundConfig
+  ): Promise<void> {
     try {
-      await ExpoPlayAudioStreamModule.setSoundConfig(config);
+      await ExpoPlayAudioStreamModule.setSoundConfig(
+        config
+      );
     } catch (error) {
       console.error(error);
-      throw new Error(`Failed to set sound configuration: ${error}`);
+      throw new Error(
+        `Failed to set sound configuration: ${error}`
+      );
     }
   }
 
@@ -418,7 +699,6 @@ export class ExpoPlayAudioStream {
   static toggleSilence() {
     ExpoPlayAudioStreamModule.toggleSilence();
   }
-
 }
 
 export {
@@ -436,4 +716,25 @@ export {
   Encoding,
   EncodingTypes,
   PlaybackModes,
+  // Audio jitter buffer types
+  IAudioBufferConfig,
+  IAudioPlayPayload,
+  IAudioFrame,
+  BufferHealthState,
+  IBufferHealthMetrics,
+  IAudioBufferManager,
+  IFrameProcessor,
+  IQualityMonitor,
+  BufferedStreamConfig,
+  SmartBufferConfig,
+  SmartBufferMode,
+  NetworkConditions,
 };
+
+// Export audio processing modules
+export {
+  AudioBufferManager,
+  FrameProcessor,
+  QualityMonitor,
+  SmartBufferManager,
+} from './audio';
