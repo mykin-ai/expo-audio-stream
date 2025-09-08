@@ -13,7 +13,11 @@ Here's how you can use the Expo Play Audio Stream module for different scenarios
 ### Standard Recording and Playback
 
 ```javascript
-import { ExpoPlayAudioStream, EncodingTypes, PlaybackModes } from 'expo-audio-stream';
+import {
+  ExpoPlayAudioStream,
+  EncodingTypes,
+  PlaybackModes,
+} from "expo-audio-stream";
 
 // Example of standard recording and playback with specific encoding
 async function handleStandardRecording() {
@@ -21,51 +25,57 @@ async function handleStandardRecording() {
     // Configure sound playback settings
     await ExpoPlayAudioStream.setSoundConfig({
       sampleRate: 44100,
-      playbackMode: PlaybackModes.REGULAR
+      playbackMode: PlaybackModes.REGULAR,
     });
 
     // Start recording with configuration
-    const { recordingResult, subscription } = await ExpoPlayAudioStream.startRecording({
-      sampleRate: 48000,
-      channels: 1,
-      encoding: 'pcm_16bit',
-      interval: 250, // milliseconds
-      onAudioStream: (event) => {
-        console.log('Received audio stream:', {
-          audioDataBase64: event.data,
-          position: event.position,
-          eventDataSize: event.eventDataSize,
-          totalSize: event.totalSize,
-          soundLevel: event.soundLevel // New property for audio level monitoring
-        });
-      }
-    });
+    const { recordingResult, subscription } =
+      await ExpoPlayAudioStream.startRecording({
+        sampleRate: 48000,
+        channels: 1,
+        encoding: "pcm_16bit",
+        interval: 250, // milliseconds
+        onAudioStream: (event) => {
+          console.log("Received audio stream:", {
+            audioDataBase64: event.data,
+            position: event.position,
+            eventDataSize: event.eventDataSize,
+            totalSize: event.totalSize,
+            soundLevel: event.soundLevel, // New property for audio level monitoring
+          });
+        },
+      });
 
     // After some time, stop recording
     setTimeout(async () => {
       const recording = await ExpoPlayAudioStream.stopRecording();
-      console.log('Recording stopped:', recording);
+      console.log("Recording stopped:", recording);
 
       // Play the recorded audio with specific encoding format
-      const turnId = 'example-turn-1';
-      await ExpoPlayAudioStream.playAudio(base64Content, turnId, EncodingTypes.PCM_S16LE);
+      const turnId = "example-turn-1";
+      await ExpoPlayAudioStream.playAudio(
+        base64Content,
+        turnId,
+        EncodingTypes.PCM_S16LE
+      );
 
       // Clean up
       subscription?.remove();
     }, 5000);
-
   } catch (error) {
-    console.error('Audio handling error:', error);
+    console.error("Audio handling error:", error);
   }
 }
 
 // You can also subscribe to audio events from anywhere
-const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (event) => {
-  console.log('Audio event received:', {
-    data: event.data,
-    soundLevel: event.soundLevel // Sound level can be used for visualization or voice detection
-  });
-});
+const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(
+  async (event) => {
+    console.log("Audio event received:", {
+      data: event.data,
+      soundLevel: event.soundLevel, // Sound level can be used for visualization or voice detection
+    });
+  }
+);
 // Don't forget to clean up when done
 // audioSubscription.remove();
 ```
@@ -75,7 +85,11 @@ const audioSubscription = ExpoPlayAudioStream.subscribeToAudioEvents(async (even
 These methods are designed for scenarios where you need to record and play audio at the same time:
 
 ```javascript
-import { ExpoPlayAudioStream, EncodingTypes, PlaybackModes } from 'expo-audio-stream';
+import {
+  ExpoPlayAudioStream,
+  EncodingTypes,
+  PlaybackModes,
+} from "expo-audio-stream";
 
 // Example of simultaneous recording and playback with voice processing
 async function handleSimultaneousRecordAndPlay() {
@@ -83,23 +97,28 @@ async function handleSimultaneousRecordAndPlay() {
     // Configure sound playback with optimized voice processing settings
     await ExpoPlayAudioStream.setSoundConfig({
       sampleRate: 44100,
-      playbackMode: PlaybackModes.VOICE_PROCESSING
+      playbackMode: PlaybackModes.VOICE_PROCESSING,
     });
 
     // Start microphone with voice processing
-    const { recordingResult, subscription } = await ExpoPlayAudioStream.startMicrophone({
-      enableProcessing: true,
-      onAudioStream: (event) => {
-        console.log('Received audio stream with voice processing:', {
-          audioDataBase64: event.data,
-          soundLevel: event.soundLevel
-        });
-      }
-    });
+    const { recordingResult, subscription } =
+      await ExpoPlayAudioStream.startMicrophone({
+        enableProcessing: true,
+        onAudioStream: (event) => {
+          console.log("Received audio stream with voice processing:", {
+            audioDataBase64: event.data,
+            soundLevel: event.soundLevel,
+          });
+        },
+      });
 
     // Play audio while recording is active, with specific encoding format
-    const turnId = 'response-turn-1';
-    await ExpoPlayAudioStream.playSound(someAudioBase64, turnId, EncodingTypes.PCM_F32LE);
+    const turnId = "response-turn-1";
+    await ExpoPlayAudioStream.playSound(
+      someAudioBase64,
+      turnId,
+      EncodingTypes.PCM_F32LE
+    );
 
     // Play a complete WAV file directly
     await ExpoPlayAudioStream.playWav(wavBase64Data);
@@ -111,7 +130,7 @@ async function handleSimultaneousRecordAndPlay() {
 
       // Interrupt current playback
       await ExpoPlayAudioStream.interruptSound();
-      
+
       // Resume playback
       await ExpoPlayAudioStream.resumeSound();
 
@@ -121,9 +140,8 @@ async function handleSimultaneousRecordAndPlay() {
       // Clean up
       subscription?.remove();
     }, 5000);
-
   } catch (error) {
-    console.error('Simultaneous audio handling error:', error);
+    console.error("Simultaneous audio handling error:", error);
   }
 }
 ```
@@ -149,11 +167,13 @@ The Expo Play Audio Stream module provides the following methods:
 - `clearPlaybackQueueByTurnId(turnId: string)`: Clears the playback queue for a specific turn ID. Throws an error if the playback queue fails to clear.
 
 - `setSoundConfig(config: SoundConfig)`: Sets the sound player configuration with options for sample rate and playback mode. The SoundConfig interface accepts:
+
   - `sampleRate`: The sample rate for audio playback in Hz (16000, 44100, or 48000)
   - `playbackMode`: The playback mode ('regular', 'voiceProcessing', or 'conversation')
   - `useDefault`: When true, resets to default configuration regardless of other parameters
 
   Default settings are:
+
   - Android: sampleRate: 44100, playbackMode: 'regular'
   - iOS: sampleRate: 44100.0, playbackMode: 'regular'
 
@@ -181,16 +201,33 @@ These methods are specifically designed for scenarios where you need to record a
 
 - `promptMicrophoneModes()`: Prompts the user to select the microphone mode (iOS specific feature).
 
+### Buffered Audio Streaming
+
+These methods enable jitter-buffered playback with health monitoring and adaptive behavior:
+
+- `startBufferedAudioStream(config: BufferedStreamConfig)`: Starts a buffered audio stream for the given turn ID. Initializes an internal buffer manager, optionally sets encoding, begins playback, and (optionally) starts periodic health reporting via `onBufferHealth`.
+
+- `playAudioBuffered(base64Chunk: string, turnId: string, isFirst?: boolean, isFinal?: boolean)`: Enqueues a base64-encoded audio chunk for buffered playback for the specified turn. Use `isFirst`/`isFinal` to mark boundaries.
+
+- `stopBufferedAudioStream(turnId: string)`: Stops buffered playback for the given turn ID, destroys internal resources, and clears the native queue for that turn.
+
+- `getBufferHealthMetrics(turnId: string): IBufferHealthMetrics | null`: Returns the current buffer health metrics for a turn if available, otherwise `null`.
+
+- `isBufferedAudioStreamPlaying(turnId: string): boolean`: Returns whether the buffered stream for the given turn ID is actively playing.
+
+- `updateBufferedAudioConfig(turnId: string, config: Partial<IAudioBufferConfig>)`: Updates buffer configuration on the fly and applies adaptive adjustments.
+
 ### Event Subscriptions
 
 - `subscribeToAudioEvents(onMicrophoneStream: (event: AudioDataEvent) => Promise<void>)`: Subscribes to audio events emitted during recording/streaming. The callback receives an AudioDataEvent containing:
+
   - `data`: Base64 encoded audio data at original sample rate
   - `position`: Current position in the audio stream
   - `fileUri`: URI of the recording file
   - `eventDataSize`: Size of the current audio data chunk
   - `totalSize`: Total size of recorded audio so far
   - `soundLevel`: Optional sound level measurement that can be used for visualization
-  Returns a subscription that should be cleaned up when no longer needed.
+    Returns a subscription that should be cleaned up when no longer needed.
 
 - `subscribeToSoundChunkPlayed(onSoundChunkPlayed: (event: SoundChunkPlayedEventPayload) => Promise<void>)`: Subscribes to events emitted when a sound chunk has finished playing. The callback receives a payload indicating if this was the final chunk. Returns a subscription that should be cleaned up when no longer needed.
 
@@ -209,6 +246,27 @@ Note: When playing audio, you can use the special turnId `"supspend-sound-events
 - `PlaybackModes`: Constants for playback modes (PlaybackModes.REGULAR, PlaybackModes.VOICE_PROCESSING, PlaybackModes.CONVERSATION)
 - `SampleRate`: Supported sample rates (16000, 44100, or 48000 Hz)
 - `RecordingEncodingType`: Encoding type for recording ('pcm_32bit', 'pcm_16bit', or 'pcm_8bit')
+
+- `AudioEvents`: Enumeration of event names emitted by the module.
+- `DeviceReconnectedReason`: Enumeration of reasons for device reconnection events.
+- `DeviceReconnectedEventPayload`: Payload type for device reconnection events.
+- `SuspendSoundEventTurnId`: Constant turn ID that suppresses sound events for a specific playback.
+
+- `IAudioBufferConfig`: Configuration for the jitter buffer (sizes, thresholds, timing).
+- `IAudioPlayPayload`: Structured payload used when enqueuing buffered audio frames.
+- `IAudioFrame`: Individual audio frame representation used by buffering internals.
+- `BufferHealthState`: Health state classification for the jitter buffer.
+- `IBufferHealthMetrics`: Health metrics snapshot of the buffer (levels, underruns, etc.).
+- `IAudioBufferManager`: Interface for buffer manager implementations.
+- `BufferedStreamConfig`: Configuration for starting buffered audio streams.
+- `SmartBufferConfig`: Configuration for adaptive buffer behavior.
+- `SmartBufferMode`: Modes for adaptive buffering strategies.
+- `NetworkConditions`: Network conditions used to guide adaptive buffering.
+
+Advanced exports (for low-level/advanced usage):
+
+- `AudioBufferManager`, `SmartBufferManager`: Buffer manager implementations.
+- `FrameProcessor`, `QualityMonitor`: Processing and quality monitoring utilities.
 
 All methods are static and most return Promises that resolve when the operation is complete. Error handling is built into each method, with descriptive error messages if operations fail.
 
@@ -229,7 +287,7 @@ The module implements several audio optimizations for voice recording:
   - Noise reduction
   - Echo cancellation
   - Voice optimization
-  
+
 Note: Voice processing may result in lower audio levels as it optimizes for voice clarity over volume. This is a trade-off made to ensure better voice quality and reduce background noise.
 
 ## Limitations and Considerations ⚠️
