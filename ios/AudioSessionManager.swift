@@ -764,16 +764,26 @@ class AudioSessionManager {
         
         let targetSampleRate = recordingSettings?.desiredSampleRate ?? buffer.format.sampleRate
         let finalBuffer: AVAudioPCMBuffer
-        
+
         if buffer.format.sampleRate != targetSampleRate {
             // Resample the audio buffer if the target sample rate is different from the input sample rate
             if let resampledBuffer = resampleAudioBuffer(buffer, from: buffer.format.sampleRate, to: targetSampleRate) {
                 finalBuffer = resampledBuffer
+                // Update recording sample rate to reflect the actual data being written
+                if recordingSettings?.sampleRate != targetSampleRate {
+                    recordingSettings?.sampleRate = targetSampleRate
+                    Logger.debug("Updated recording sample rate to \(targetSampleRate) Hz after resampling")
+                }
             } else {
                 Logger.debug("Fallback to AVAudioConverter. Converting from \(buffer.format.sampleRate) Hz to \(targetSampleRate) Hz")
-                
+
                 if let convertedBuffer = self.tryConvertToFormat(inputBuffer: buffer, desiredSampleRate: targetSampleRate, desiredChannel: 1) {
                     finalBuffer = convertedBuffer
+                    // Update recording sample rate to reflect the actual data being written
+                    if recordingSettings?.sampleRate != targetSampleRate {
+                        recordingSettings?.sampleRate = targetSampleRate
+                        Logger.debug("Updated recording sample rate to \(targetSampleRate) Hz after conversion")
+                    }
                 } else {
                     Logger.debug("Failed to convert to desired format.")
                     finalBuffer = buffer
