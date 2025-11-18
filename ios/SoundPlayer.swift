@@ -10,7 +10,7 @@ class SoundPlayer {
     
     private let bufferAccessQueue = DispatchQueue(label: "com.expoaudiostream.bufferAccessQueue")
     
-    private var audioQueue: [(buffer: AVAudioPCMBuffer, promise: RCTPromiseResolveBlock, turnId: String)] = []  // Queue for audio segments
+    private var audioQueue: [(buffer: AVAudioPCMBuffer, turnId: String)] = []  // Queue for audio segments
     // needed to track segments in progress in order to send playbackevents properly
     private var segmentsLeftToPlay: Int = 0
     private var isPlaying: Bool = false  // Tracks if audio is currently playing
@@ -445,8 +445,9 @@ class SoundPlayer {
                 }
             }
                         
-            let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
+            let bufferTuple = (buffer: buffer, turnId: strTurnId)
             audioQueue.append(bufferTuple)
+            resolver(nil)
             if self.segmentsLeftToPlay == 0 && strTurnId != suspendSoundEventTurnId {
                 self.delegate?.onSoundStartedPlaying()
             }
@@ -485,8 +486,8 @@ class SoundPlayer {
                 return
             }
 
-            // Get the first buffer tuple from the queue (buffer, promise, turnId)
-            if let (buffer, promise, turnId) = self.audioQueue.first {
+            // Get the first buffer tuple from the queue (buffer, turnId)
+            if let (buffer, turnId) = self.audioQueue.first {
                 // Remove the buffer from the queue immediately to avoid playing it twice
                 self.audioQueue.removeFirst()
 
@@ -494,10 +495,7 @@ class SoundPlayer {
                 self.audioPlayerNode.scheduleBuffer(buffer) { [weak self] in
                     // ✅ Move to main queue to avoid blocking Core Audio's realtime thread
                     DispatchQueue.main.async {
-                        guard let self = self else {
-                            promise(nil)
-                            return
-                        }
+                        guard let self = self else { return }
                         
                         // Decrement the count of segments left to play
                         self.segmentsLeftToPlay -= 1
@@ -510,9 +508,6 @@ class SoundPlayer {
                             self.delegate?.onSoundChunkPlayed(isFinalSegment)
                         }
 
-                        // Resolve the promise to indicate successful playback
-                        promise(nil)
-                        
                         // If this is the final segment and we're in voiceProcessing mode,
                         // stop the engine and disable voice processing
                         if isFinalSegment && self.config.playbackMode == .voiceProcessing {
