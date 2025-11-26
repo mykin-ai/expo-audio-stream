@@ -2067,7 +2067,6 @@ __metadata:
     "@types/react": "npm:^18.0.25"
     expo-module-scripts: "npm:^3.4.1"
     expo-modules-core: "npm:^1.11.12"
-    husky: "npm:^9.0.11"
   peerDependencies:
     expo: "*"
     react: "*"
@@ -4618,15 +4617,6 @@ __metadata:
     agent-base: "npm:^7.0.2"
     debug: "npm:4"
   checksum: 10c0/bc4f7c38da32a5fc622450b6cb49a24ff596f9bd48dcedb52d2da3fa1c1a80e100fb506bd59b326c012f21c863c69b275c23de1a01d0b84db396822fdf25e52b
-  languageName: node
-  linkType: hard
-
-"husky@npm:^9.0.11":
-  version: 9.1.7
-  resolution: "husky@npm:9.1.7"
-  bin:
-    husky: bin.js
-  checksum: 10c0/35bb110a71086c48906aa7cd3ed4913fb913823715359d65e32e0b964cb1e255593b0ae8014a5005c66a68e6fa66c38dcfa8056dbbdfb8b0187c0ffe7ee3a58f
   languageName: node
   linkType: hard
 
