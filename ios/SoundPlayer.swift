@@ -19,6 +19,10 @@ class SoundPlayer {
     
     // specific turnID to ignore sound events
     internal let suspendSoundEventTurnId: String = "suspend-sound-events"
+    
+    // Debounce mechanism for isFinal signal - prevents premature isFinal when chunks arrive with network latency
+    private var pendingFinalWorkItem: DispatchWorkItem?
+    private let finalDebounceDelay: TimeInterval = 0.8  // 800ms for smooth debounce
   
     private var audioPlaybackFormat: AVAudioFormat!
     private var config: SoundConfig
@@ -247,24 +251,35 @@ class SoundPlayer {
     /// - Parameter promise: Promise to resolve when queue is cleared
     func clearSoundQueue(turnIdToClear turnId: String = "", resolver promise: Promise) {
         Logger.debug("[SoundPlayer] Clearing Sound Queue...")
-        if !self.audioQueue.isEmpty {
-            Logger.debug("[SoundPlayer] Queue is not empty clearing")
-            self.audioQueue.removeAll(where: { $0.turnId == turnId } )
-        } else {
-            Logger.debug("[SoundPlayer] Queue is empty")
+        self.bufferAccessQueue.async { [weak self] in
+            guard let self = self else {
+                promise.resolve(nil)
+                return
+            }
+            
+            // Cancel any pending final signal when clearing queue
+            self.pendingFinalWorkItem?.cancel()
+            self.pendingFinalWorkItem = nil
+            
+            if !self.audioQueue.isEmpty {
+                Logger.debug("[SoundPlayer] Queue is not empty clearing")
+                let removedCount = self.audioQueue.filter { $0.turnId == turnId }.count
+                self.audioQueue.removeAll(where: { $0.turnId == turnId })
+                // Adjust segmentsLeftToPlay to account for removed items
+                self.segmentsLeftToPlay = max(0, self.segmentsLeftToPlay - removedCount)
+            } else {
+                Logger.debug("[SoundPlayer] Queue is empty")
+            }
+            promise.resolve(nil)
         }
-        promise.resolve(nil)
     }
     
     /// Stops audio playback and clears the queue
     /// - Parameter promise: Promise to resolve when stopped
     func stop(_ promise: Promise) {
         Logger.debug("[SoundPlayer] Stopping Audio")
-        if !self.audioQueue.isEmpty {
-            Logger.debug("[SoundPlayer] Queue is not empty clearing")
-            self.audioQueue.removeAll()
-        }
-          // Stop the audio player node
+        
+        // Stop the audio player node first (can be done outside the queue)
         if self.audioPlayerNode != nil && self.audioPlayerNode.isPlaying {
             Logger.debug("[SoundPlayer] Player is playing stopping")
             self.audioPlayerNode.pause()
@@ -282,8 +297,24 @@ class SoundPlayer {
             }
         }
         
-        self.segmentsLeftToPlay = 0
-        promise.resolve(nil)
+        // Clear queue and reset segment count on bufferAccessQueue for thread safety
+        self.bufferAccessQueue.async { [weak self] in
+            guard let self = self else {
+                promise.resolve(nil)
+                return
+            }
+            
+            // Cancel any pending final signal
+            self.pendingFinalWorkItem?.cancel()
+            self.pendingFinalWorkItem = nil
+            
+            if !self.audioQueue.isEmpty {
+                Logger.debug("[SoundPlayer] Queue is not empty clearing")
+                self.audioQueue.removeAll()
+            }
+            self.segmentsLeftToPlay = 0
+            promise.resolve(nil)
+        }
     }
     
     /// Interrupts audio playback
@@ -435,26 +466,40 @@ class SoundPlayer {
                 throw SoundPlayerError.invalidBase64String
             }
             
-            // Enable voice processing for voice processing mode just before we start playback
-            let isFirstChunk = self.audioQueue.isEmpty && self.segmentsLeftToPlay == 0
-            if isFirstChunk && config.playbackMode == .voiceProcessing {
-                // For voice processing, we need to stop the engine first, then enable voice processing
-                let success = setupVoiceProcessingForPlayback()
-                if !success {
-                    Logger.debug("[SoundPlayer] Continuing without voice processing")
+            // Use bufferAccessQueue for all queue and segment count access to ensure thread safety
+            self.bufferAccessQueue.async { [weak self] in
+                guard let self = self else {
+                    resolver(nil)
+                    return
                 }
-            }
-                        
-            let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
-            audioQueue.append(bufferTuple)
-            if self.segmentsLeftToPlay == 0 && strTurnId != suspendSoundEventTurnId {
-                self.delegate?.onSoundStartedPlaying()
-            }
-            self.segmentsLeftToPlay += 1
-            // If not already playing, start playback
-            if audioQueue.count == 1 {
-                Logger.debug("[SoundPlayer] Starting playback [ \(audioQueue.count)]")
-                playNextInQueue()
+                
+                // Cancel any pending "final" signal - new chunk arrived, so we're not done yet
+                self.pendingFinalWorkItem?.cancel()
+                self.pendingFinalWorkItem = nil
+                
+                // Enable voice processing for voice processing mode just before we start playback
+                let isFirstChunk = self.audioQueue.isEmpty && self.segmentsLeftToPlay == 0
+                if isFirstChunk && self.config.playbackMode == .voiceProcessing {
+                    // For voice processing, we need to stop the engine first, then enable voice processing
+                    let success = self.setupVoiceProcessingForPlayback()
+                    if !success {
+                        Logger.debug("[SoundPlayer] Continuing without voice processing")
+                    }
+                }
+                            
+                let bufferTuple = (buffer: buffer, promise: resolver, turnId: strTurnId)
+                self.audioQueue.append(bufferTuple)
+                if self.segmentsLeftToPlay == 0 && strTurnId != self.suspendSoundEventTurnId {
+                    DispatchQueue.main.async {
+                        self.delegate?.onSoundStartedPlaying()
+                    }
+                }
+                self.segmentsLeftToPlay += 1
+                // If not already playing, start playback
+                if self.audioQueue.count == 1 {
+                    Logger.debug("[SoundPlayer] Starting playback [ \(self.audioQueue.count)]")
+                    self.playNextInQueue()
+                }
             }
         } catch {
             Logger.debug("[SoundPlayer] Failed to enqueue audio chunk: \(error.localizedDescription)")
@@ -468,8 +513,19 @@ class SoundPlayer {
     /// 2. Starting the audio player node if it's not already playing
     /// 3. Scheduling the next audio buffer for playback
     /// 4. Handling completion callbacks and recursively playing the next chunk
+    /// - Note: This method should be called from bufferAccessQueue to ensure thread safety
     private func playNextInQueue() {
+        // Ensure we're on the buffer access queue for thread safety
+        // If called from elsewhere, dispatch to the queue
+        dispatchPrecondition(condition: .onQueue(bufferAccessQueue))
+        
         Logger.debug("[SoundPlayer] Playing audio [ \(audioQueue.count)]")
+        
+        // Check if queue is empty
+        guard !self.audioQueue.isEmpty else {
+            Logger.debug("[SoundPlayer] Queue is empty, nothing to play")
+            return
+        }
           
         // Start the audio player node if it's not already playing
         if !self.audioPlayerNode.isPlaying {
@@ -477,58 +533,79 @@ class SoundPlayer {
             self.audioPlayerNode.play()
         }
         
-        // Use a dedicated queue for buffer access to avoid blocking the main thread
-        self.bufferAccessQueue.async {
-            // Check if queue is empty INSIDE the async block to avoid race conditions
-            guard !self.audioQueue.isEmpty else {
-                Logger.debug("[SoundPlayer] Queue is empty, nothing to play")
-                return
-            }
+        // Get the first buffer tuple from the queue (buffer, promise, turnId)
+        if let (buffer, promise, turnId) = self.audioQueue.first {
+            // Remove the buffer from the queue immediately to avoid playing it twice
+            self.audioQueue.removeFirst()
 
-            // Get the first buffer tuple from the queue (buffer, promise, turnId)
-            if let (buffer, promise, turnId) = self.audioQueue.first {
-                // Remove the buffer from the queue immediately to avoid playing it twice
-                self.audioQueue.removeFirst()
+            // Schedule the buffer for playback with a completion handler
+            self.audioPlayerNode.scheduleBuffer(buffer) { [weak self] in
+                guard let self = self else {
+                    promise(nil)
+                    return
+                }
+                
+                // Use bufferAccessQueue for all queue and segment count access
+                self.bufferAccessQueue.async {
+                    // Decrement the count of segments left to play
+                    self.segmentsLeftToPlay -= 1
 
-                // Schedule the buffer for playback with a completion handler
-                self.audioPlayerNode.scheduleBuffer(buffer) { [weak self] in
-                    // ✅ Move to main queue to avoid blocking Core Audio's realtime thread
+                    // Check if this is the final segment in the current sequence
+                    let isFinalSegment = self.segmentsLeftToPlay == 0
+                    
+                    // Resolve the promise on main thread
                     DispatchQueue.main.async {
-                        guard let self = self else {
-                            promise(nil)
-                            return
-                        }
-                        
-                        // Decrement the count of segments left to play
-                        self.segmentsLeftToPlay -= 1
-
-                        // Check if this is the final segment in the current sequence
-                        let isFinalSegment = self.segmentsLeftToPlay == 0
-                        
-                        // ✅ Notify delegate about playback completion on main thread (unless using the suspend events ID)
-                        if turnId != self.suspendSoundEventTurnId {
-                            self.delegate?.onSoundChunkPlayed(isFinalSegment)
-                        }
-
-                        // Resolve the promise to indicate successful playback
                         promise(nil)
-                        
-                        // If this is the final segment and we're in voiceProcessing mode,
-                        // stop the engine and disable voice processing
+                    }
+                    
+                    // ✅ Notify delegate about playback completion
+                    if turnId != self.suspendSoundEventTurnId {
+                        if isFinalSegment {
+                            // Debounce the isFinal signal - wait to see if more chunks arrive
+                            // This prevents premature isFinal when chunks arrive with network latency
+                            let workItem = DispatchWorkItem { [weak self] in
+                                guard let self = self else { return }
+                                // Double-check we're still at 0 segments (no new chunks arrived)
+                                if self.segmentsLeftToPlay == 0 {
+                                    Logger.debug("[SoundPlayer] Debounced isFinal - no more chunks arrived, sending isFinal: true")
+                                    DispatchQueue.main.async {
+                                        self.delegate?.onSoundChunkPlayed(true)
+                                    }
+                                    
+                                    // Handle voice processing mode cleanup
+                                    if self.config.playbackMode == .voiceProcessing {
+                                        Logger.debug("[SoundPlayer] Final segment in voice processing mode, stopping engine")
+                                        if let engine = self.audioEngine, engine.isRunning {
+                                            engine.stop()
+                                            try? self.disableVoiceProcessing()
+                                            self.isAudioEngineIsSetup = false
+                                        }
+                                    }
+                                }
+                            }
+                            self.pendingFinalWorkItem = workItem
+                            self.bufferAccessQueue.asyncAfter(deadline: .now() + self.finalDebounceDelay, execute: workItem)
+                        } else {
+                            // Not the final segment, send immediately
+                            DispatchQueue.main.async {
+                                self.delegate?.onSoundChunkPlayed(false)
+                            }
+                        }
+                    } else {
+                        // For suspended events, still handle voice processing cleanup if needed
                         if isFinalSegment && self.config.playbackMode == .voiceProcessing {
-                            Logger.debug("[SoundPlayer] Final segment in voice processing mode, stopping engine")
+                            Logger.debug("[SoundPlayer] Final segment in voice processing mode (suspended events), stopping engine")
                             if let engine = self.audioEngine, engine.isRunning {
                                 engine.stop()
-                                // Disable voice processing after stopping the engine
                                 try? self.disableVoiceProcessing()
                                 self.isAudioEngineIsSetup = false
                             }
                         }
-                        
-                        // Recursively play the next chunk if not interrupted and queue is not empty
-                        if !self.isInterrupted && !self.audioQueue.isEmpty {
-                            self.playNextInQueue()
-                        }
+                    }
+                    
+                    // Recursively play the next chunk if not interrupted and queue is not empty
+                    if !self.isInterrupted && !self.audioQueue.isEmpty {
+                        self.playNextInQueue()
                     }
                 }
             }
