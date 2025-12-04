@@ -1,5 +1,6 @@
 import AVFoundation
 import ExpoModulesCore
+import Accelerate
 
 public enum SoundPlayerError: Error {
     case invalidBase64String
@@ -74,7 +75,10 @@ class AudioUtils {
             var y: [Float] = Array(repeating: 0, count: targetFrameCount) // Temporary array for resampled data
             
             // Resample using vDSP_vgenp which performs interpolation
-            vDSP_vgenp(input.baseAddress!, vDSP_Stride(1), [Float](stride(from: 0, to: Float(sourceFrameCount), by: resamplingFactor)), vDSP_Stride(1), &y, vDSP_Stride(1), vDSP_Length(targetFrameCount), vDSP_Length(sourceFrameCount))
+            let indices = [Float](stride(from: 0, to: Float(sourceFrameCount), by: resamplingFactor))
+            indices.withUnsafeBufferPointer { indicesPtr in
+                vDSP_vgenp(input.baseAddress!, 1, indicesPtr.baseAddress!, 1, &y, 1, vDSP_Length(targetFrameCount), vDSP_Length(sourceFrameCount))
+            }
             
             for i in 0..<targetFrameCount {
                 output[i] = y[i]
