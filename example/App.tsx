@@ -100,7 +100,7 @@ export default function App() {
       </View>
       <Button
         onPress={async () => {
-          if (!isMicrophonePermissionGranted()) {
+          if (!(await isMicrophonePermissionGranted())) {
             const permissionGranted = await requestMicrophonePermission();
             if (!permissionGranted) {
               return;
