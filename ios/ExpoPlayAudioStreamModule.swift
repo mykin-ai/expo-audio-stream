@@ -58,6 +58,29 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             promptForMicrophoneModes()
         }
         
+        /// Requests microphone permission from the user.
+        AsyncFunction("requestPermissionsAsync") { (promise: Promise) in
+            checkMicrophonePermission { granted in
+                promise.resolve([
+                    "granted": granted,
+                    "canAskAgain": true,
+                    "status": granted ? "granted" : "denied"
+                ])
+            }
+        }
+        
+        /// Gets the current microphone permission status.
+        AsyncFunction("getPermissionsAsync") { (promise: Promise) in
+            let status = AVAudioSession.sharedInstance().recordPermission
+            let granted = status == .granted
+            let canAskAgain = status == .undetermined
+            promise.resolve([
+                "granted": granted,
+                "canAskAgain": canAskAgain,
+                "status": granted ? "granted" : (canAskAgain ? "undetermined" : "denied")
+            ])
+        }
+        
         /// Asynchronously starts audio recording with the given settings.
         ///
         /// - Parameters:

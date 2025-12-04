@@ -9,14 +9,13 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "~50.0.14",
-    "expo-av": "~13.10.6",
-    "react": "18.2.0",
-    "react-native": "0.73.6"
+    "expo": "~54.0.0",
+    "react": "19.1.0",
+    "react-native": "0.81.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "@types/react": "~18.2.45",
+    "@types/react": "^19.0.0",
     "@types/uuid": "^10",
     "typescript": "^5.1.3"
   },
