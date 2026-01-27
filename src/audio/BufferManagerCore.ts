@@ -34,11 +34,13 @@ export class AudioBufferManager
       minBufferMs: 120,
       maxBufferMs: 480,
       frameIntervalMs: 20,
+      frameMaxSizeBytes: 64 * 1024,
       ...config,
     };
 
     this._frameProcessor = new FrameProcessor(
-      this._config.frameIntervalMs
+      this._config.frameIntervalMs,
+      this._config.frameMaxSizeBytes
     );
     this._qualityMonitor = new QualityMonitor(
       this._config.frameIntervalMs

@@ -11,16 +11,21 @@ import {
 export class FrameProcessor implements IFrameProcessor {
   private static readonly _sampleRate = 16000; // 16kHz
   private static readonly _bytesPerSample = 2; // 16-bit PCM
-  private static readonly _maxReasonableChunkSizeBytes =
+  private static readonly _defaultMaxReasonableChunkSizeBytes =
     64 * 1024; // 64KB safety
   private static readonly _validBase64Regex =
     /^[A-Za-z0-9+/]*={0,2}$/;
 
   private _sequenceNumber: number = 0;
   private _frameIntervalMs: number;
+  private _maxReasonableChunkSizeBytes: number
 
-  constructor(frameIntervalMs: number = 20) {
+  constructor(
+    frameIntervalMs: number = 20, 
+    maxChunkSizeBytes: number = FrameProcessor._defaultMaxReasonableChunkSizeBytes
+  ) {
     this._frameIntervalMs = frameIntervalMs;
+    this._maxReasonableChunkSizeBytes = maxChunkSizeBytes
   }
 
   /** Parse an audio payload into timestamped frames with validation. */
@@ -89,8 +94,9 @@ export class FrameProcessor implements IFrameProcessor {
     const estimatedDecodedSize =
       (payload.audioData.length * 3) / 4;
     if (
+      this._maxReasonableChunkSizeBytes > 0 &&
       estimatedDecodedSize >
-      FrameProcessor._maxReasonableChunkSizeBytes
+      this._maxReasonableChunkSizeBytes
     ) {
       console.warn(
         'FrameProcessor: Chunk size exceeds reasonable limit:',

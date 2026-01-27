@@ -186,6 +186,7 @@ export interface IAudioBufferConfig {
   minBufferMs: number; // Minimum buffer size before underrun handling
   maxBufferMs: number; // Maximum buffer size before overrun handling
   frameIntervalMs: number; // Expected frame interval in milliseconds
+  frameMaxSizeBytes: number; // Maximum expected size of each audio frame in bytes
 }
 
 /**
