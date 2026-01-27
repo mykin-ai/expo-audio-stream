@@ -197,7 +197,7 @@ These methods are specifically designed for scenarios where you need to record a
 
 - `playWav(wavBase64: string)`: Plays a WAV format audio file from base64 encoded data. Unlike playSound(), this method plays the audio directly without queueing. The audio data should be base64 encoded WAV format. Throws an error if the WAV audio fails to play.
 
-- `toggleSilence()`: Toggles the silence state of the microphone during recording. This can be useful for temporarily muting the microphone without stopping the recording session. Throws an error if the microphone fails to toggle silence.
+- `toggleSilence(isSilent?: boolean)`: Sets or toggles the silence state of the microphone during recording. This can be useful for temporarily muting the microphone without stopping the recording session. Throws an error if the microphone fails to toggle silence.  Passing undefined will toggle the current value.
 
 - `promptMicrophoneModes()`: Prompts the user to select the microphone mode (iOS specific feature).
 

@@ -328,8 +328,8 @@ public class ExpoPlayAudioStreamModule: Module, AudioStreamManagerDelegate, Micr
             microphone.stopRecording(resolver: promise)
         }
         
-        Function("toggleSilence") {
-            microphone.toggleSilence()
+        Function("toggleSilence") { (isSilent: Bool?) in
+            microphone.toggleSilence(isSilent: isSilent)
         }
         
         /// Sets the sound player configuration

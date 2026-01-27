@@ -589,8 +589,8 @@ export class ExpoPlayAudioStream {
    * @returns {Promise<void>}
    * @throws {Error} If the microphone fails to toggle silence.
    */
-  static toggleSilence() {
-    ExpoPlayAudioStreamModule.toggleSilence();
+  static toggleSilence(isSilent?: boolean | null) {
+    ExpoPlayAudioStreamModule.toggleSilence(isSilent ?? null);
   }
 
   /**
