@@ -467,8 +467,8 @@ class AudioRecorderManager(
     /**
      * Toggles between sending actual audio data and silence
      */
-    fun toggleSilence() {
-        isSilent = !isSilent
+    fun toggleSilence(isSilent: Boolean?) {
+        this.isSilent = isSilent ?: !this.isSilent
         Log.d(Constants.TAG, "Silence mode toggled: $isSilent")
     }
 

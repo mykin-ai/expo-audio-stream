@@ -228,9 +228,9 @@ class ExpoPlayAudioStreamModule : Module(), EventSender {
             audioRecorderManager.stopRecording(promise)
         }
 
-        Function("toggleSilence") {
+        Function("toggleSilence") { isSilent: Boolean? ->
             // Just toggle silence without returning any value
-            audioRecorderManager.toggleSilence()
+            audioRecorderManager.toggleSilence(isSilent)
         }
 
         AsyncFunction("setSoundConfig") { config: Map<String, Any?>, promise: Promise ->

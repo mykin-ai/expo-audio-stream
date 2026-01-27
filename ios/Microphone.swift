@@ -67,9 +67,9 @@ class Microphone {
         }
     }
     
-    func toggleSilence() {
+    func toggleSilence(isSilent: Bool?) {
         Logger.debug("[Microphone] toggleSilence")
-        self.isSilent = !self.isSilent
+        self.isSilent = isSilent ?? !self.isSilent
     }
     
     func startRecording(settings: RecordingSettings, intervalMilliseconds: Int) -> StartRecordingResult? {
@@ -198,7 +198,7 @@ class Microphone {
             finalBuffer = buffer
         }
         
-        let powerLevel: Float = AudioUtils.calculatePowerLevel(from: finalBuffer)
+        let powerLevel: Float = isSilent ? -160.0 : AudioUtils.calculatePowerLevel(from: finalBuffer)
         
         let audioData = finalBuffer.audioBufferList.pointee.mBuffers
         guard let bufferData = audioData.mData else {
